@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+docker exec \
+    -it -w /jepsen \
+    -e MIX_ENV=prod \
+    -e MIX_BUILD_ROOT=/var/jepsen/shared/fuzz_dist/_build \
+    jepsen-control \
+    mix release --overwrite --path /var/jepsen/shared/fuzz_dist
+
+# docker exec -it -w /var/jepsen/shared/fuzz_dist jepsen-n1 bin/fuzz_dist daemon
+
+
+# docker exec -it -w /jepsen/fuzz_dist/antidote jepsen-control ./rebar3 -o /var/jepsen/shared/antidote
+
+# docker exec -it -w /var/jepsen/shared/antidote -e NODE_NAME=antidote@127.0.0.1 ROOT_DIR_PREFIX=antidote@127.0.0.1/ COOKIE=cookie jepsen-n1 bin/antidote daemon

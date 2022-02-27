@@ -37,4 +37,28 @@ ADD ./init.sh /init.sh
 RUN dos2unix /init.sh /root/.bashrc \
     && chmod +x /init.sh
 
+# locale of UTF-8 vs default latin1
+RUN apt-get -qy update && \
+    apt-get -qy install \
+    locales && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
+
+# Install Elixir/Erlang from ESL repository
+RUN apt-get -qy update && \
+    apt-get -qy install \
+    gnupg
+RUN wget https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb && \
+    dpkg -i erlang-solutions_2.0_all.deb && \
+    apt-get -qy update && \
+    apt-get -qy install \
+    erlang \
+    elixir && \
+    mix local.hex --force --if-missing && \
+    mix local.rebar --force --if-missing && \
+    rm erlang-solutions_2.0_all.deb
+
 CMD /init.sh

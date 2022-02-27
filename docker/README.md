@@ -1,5 +1,29 @@
 # Dockerized Jepsen
 
+## This is a customized version of Jepsen's Docker environment.
+
+- Control Node
+  - Elixir/Erlang from ESL Repository
+  - locale -> UTF8
+- Database Node
+  - local -> UTF8
+- Compose
+  - work around `privledged: true` bug on Ubuntu
+  - `--dev` local filesystem `:ro`
+- bin
+  - build Elixir release with container env
+
+## Quick Start
+
+```bash
+cd jepsen/docker
+bin/up --dev
+bin/release
+bin/console
+```
+
+# Original Jepsen
+
 This docker image attempts to simplify the setup required by Jepsen.
 It is intended to be used by a CI tool or anyone with Docker who wants to try Jepsen themselves.
 

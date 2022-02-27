@@ -14,9 +14,9 @@ RUN apt-get install -y apt-transport-https
 # Install packages
 RUN apt-get -qy update && \
     apt-get -qy install \
-        dos2unix \
-        openssh-server \
-        pwgen
+    dos2unix \
+    openssh-server \
+    pwgen
 
 # When run, boot-debian-base will call this script, which does final
 # per-db-node setup stuff.
@@ -31,6 +31,16 @@ ENV DEBBASE_SSH enabled
 
 # Install Jepsen deps
 RUN apt-get install -qy build-essential bzip2 curl dnsutils faketime iproute2 iptables iputils-ping libzip4 logrotate man man-db net-tools ntpdate psmisc python rsyslog sudo tar unzip vim wget ca-certificates
+
+# locale of UTF-8 vs default latin1
+RUN apt-get -qy update && \
+    apt-get -qy install \
+    locales && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
 
 EXPOSE 22
 CMD ["/usr/local/bin/boot-debian-base"]
