@@ -10,8 +10,6 @@ jobs:
   elixir_ci:
     name: Elixir CI 🧪
     runs-on: ubuntu-latest
-    env:
-      MIX_ENV: test
 
     steps:
     - name: Checkout repository 🛎️
