@@ -6,8 +6,8 @@ docker exec \
     -e MIX_ENV=prod \
     -e MIX_BUILD_ROOT=/var/jepsen/shared/fuzz_dist/_build \
     jepsen-control \
-    mix release --overwrite --path /var/jepsen/shared/fuzz_dist
-
+    mix do deps.get, release --overwrite --path /var/jepsen/shared/fuzz_dist
+    
 # docker exec -it -w /var/jepsen/shared/fuzz_dist jepsen-n1 bin/fuzz_dist daemon
 
 
