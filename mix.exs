@@ -11,7 +11,7 @@ defmodule FuzzDist.MixProject do
       aliases: aliases(),
       preferred_cli_env: [testy: :test, releasey: :prod],
       releases: releases(),
-      threshold: 0
+      test_coverage: [threshold: 0]
     ]
   end
 
