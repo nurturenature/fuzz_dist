@@ -55,7 +55,8 @@ jobs:
     - name: Test 🦺
       run: |
         mix test --warnings-as-errors --cover --export-coverage default
-        mix test.coverage
+      # TODO: bug in mix doesn't respect test_coverage: [threshold: 0]
+      # mix test.coverage
 
     - name: Artifacts 📚
       uses: actions/upload-artifact@v2

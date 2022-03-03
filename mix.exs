@@ -9,26 +9,32 @@ defmodule FuzzDist.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
-      preferred_cli_env: [testy: :test],
-      releases: [
-        fuzz_dist: [
-          include_executables_for: [:unix],
-          applications: [runtime_tools: :permanent],
-          cookie: Base.url_encode64(:crypto.strong_rand_bytes(40))
-        ]
-      ]
+      preferred_cli_env: [testy: :test, releasey: :prod],
+      releases: releases(),
+      test_coverage: [threshold: 0]
     ]
   end
 
   def application do
     [
-      extra_applications: [:logger],
-      mod: {FuzzDist.Application, []}
+      mod: {FuzzDist.Application, []},
+      extra_applications: [:logger]
+    ]
+  end
+
+  defp releases do
+    [
+      fuzz_dist: [
+        include_executables_for: [:unix],
+        applications: [runtime_tools: :permanent],
+        cookie: "fuzz_dist"
+      ]
     ]
   end
 
   defp deps do
     [
+      {:cowboy, "~> 2.9"},
       {:credo, "~> 1.6", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
@@ -53,6 +59,10 @@ defmodule FuzzDist.MixProject do
       testy: [
         "test --warnings-as-errors --cover --export-coverage default",
         "test.coverage"
+      ],
+      releasey: [
+        "deps.get",
+        "release --overwrite"
       ]
     ]
   end
