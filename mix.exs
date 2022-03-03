@@ -10,7 +10,8 @@ defmodule FuzzDist.MixProject do
       deps: deps(),
       aliases: aliases(),
       preferred_cli_env: [testy: :test, releasey: :prod],
-      releases: releases()
+      releases: releases(),
+      threshold: 0
     ]
   end
 
