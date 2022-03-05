@@ -5,7 +5,9 @@
             :url "http://creativecommons.org/licenses/by-sa/4.0/"}
   :main jepsen.fuzz_dist
   :dependencies [[org.clojure/clojure "1.10.0"]
+                 [org.clojure/data.json "2.4.0"]
+                 [aleph "0.4.6"]
                  [jepsen "0.2.6"]
-                 [aleph "0.4.6"]]
+                 [manifold "0.2.3"]]
   :repl-options {:init-ns jepsen.fuzz_dist})
 
