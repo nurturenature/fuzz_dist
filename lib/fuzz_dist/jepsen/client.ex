@@ -4,19 +4,28 @@ defmodule FuzzDist.Jepsen.Client do
   """
   @behaviour :cowboy_websocket
 
+  require Logger
+
   @impl true
-  # no auth, upgrade to ws
-  def init(req, opts), do: {:cowboy_websocket, req, opts}
+  def init(req, opts) do
+    # no auth, upgrade to ws
+    Logger.debug("Client http connected: #{inspect({req, opts})}")
+
+    {:cowboy_websocket, req, opts}
+  end
 
   @impl true
   def websocket_init(state) do
     # ws connected and in a new process
+    Logger.debug("Client ws connected: #{inspect(state)}")
 
     {[], state}
   end
 
   @impl true
   def websocket_handle({:text, message}, state) do
+    Logger.debug("Client message: #{inspect(message)}")
+
     {[{:text, message}], state}
   end
 
@@ -29,7 +38,9 @@ defmodule FuzzDist.Jepsen.Client do
   end
 
   @impl true
-  def websocket_info(_info, state) do
+  def websocket_info(info, state) do
+    Logger.warning("Unexpected: #{inspect(info)}")
+
     {[], state}
   end
 

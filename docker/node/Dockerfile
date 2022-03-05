@@ -43,4 +43,5 @@ ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 
 EXPOSE 22
-CMD ["/usr/local/bin/boot-debian-base"]
+
+CMD [ "/usr/local/bin/boot-debian-base" ]
