@@ -1,5 +1,6 @@
 FROM debian:buster
-MAINTAINER jake@apache.org
+
+LABEL author="jake@apache.org"
 
 ENV LEIN_ROOT true
 
@@ -61,4 +62,4 @@ RUN wget https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb && \
     mix local.rebar --force --if-missing && \
     rm erlang-solutions_2.0_all.deb
 
-CMD /init.sh
+CMD [ "/init.sh" ]
