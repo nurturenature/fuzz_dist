@@ -5,6 +5,10 @@ defmodule FuzzDist.Jepsen.JepSir do
   Jepsen creates operations on the Control node driven by property test `:generator`s.
 
   The operations are executed on the target node's client as an Elixir `@behavior`.
+
+  JepSir is strict in following a happy path.
+  Unexpected or malformed messages crash or `raise`
+  to invalidate the client in Jepsen.
   """
   @behaviour :cowboy_websocket
 
@@ -30,13 +34,25 @@ defmodule FuzzDist.Jepsen.JepSir do
   def websocket_handle({:text, message}, state) do
     Logger.debug("JepSir handle: #{inspect(message)}")
 
-    {[{:text, message}], state}
+    %{mod: mod, fun: fun, args: args} = Jason.decode!(message, keys: :atoms)
+    mod = Macro.camelize(mod)
+
+    resp =
+      case {mod, fun, args} do
+        {"GSet", "read", _} -> %{type: :fail, return: :not_implemented}
+        _ -> %{type: :fail, return: :not_implemented}
+      end
+
+    resp = Jason.encode!(resp, maps: :strict)
+
+    {[{:text, resp}], state}
   end
 
   @impl true
   def websocket_handle(in_frame, state) do
     # unexpected message = framework violation = invalidates test
     Logger.error("JepSir unexpected handle: #{inspect({in_frame, state})}")
+
     raise "JepSir unexpected message!"
 
     {in_frame, state}

@@ -1,8 +1,8 @@
 (ns jepsen.fuzz_dist
-  (:require [clojure.data.json :as json]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [aleph.http :as http]
+            [cheshire.core :as json]
             [manifold.stream :as s]
             [jepsen [cli :as cli]
              [client :as client]
@@ -25,7 +25,7 @@
       (info node "installing AntidoteDB" version)
       (c/exec :cp :-r "/var/jepsen/shared/fuzz_dist" "/root")
       (c/exec "/root/fuzz_dist/bin/fuzz_dist" "daemon")
-      (Thread/sleep 10000))
+      (Thread/sleep 5000))
 
     ;; TODO: use Jepsen daemon, for now catch failures
     (teardown! [_ test node]
@@ -33,7 +33,7 @@
       (try
         (c/exec "/root/fuzz_dist/bin/fuzz_dist" "stop")
         (catch Exception e))
-      (Thread/sleep 10000)
+      (Thread/sleep 5000)
       (c/exec :rm :-rf "/root/fuzz_dist"))
 
     db/LogFiles
@@ -48,12 +48,14 @@
 (defn ws-invoke
   "Invokes the op over the ws connection.
   On the BEAM side a :cowboy_websocket_handler dispatches to an Elixir @behavior."
-  [conn op]
-  ;; (s/put! conn (json/write-str op))
-  (s/put! conn "ping")
-  op
-  ;; @(s/take! conn)
-  )
+  [conn mod fun op]
+  (s/put! conn
+          (json/generate-string
+           {:mod mod
+            :fun fun
+            :args op}))
+
+  (json/parse-string @(s/take! conn) true))
 
 (defrecord Client [conn]
   client/Client
@@ -65,7 +67,12 @@
 
   (invoke! [_ test op]
     (case (:f op)
-      :read (assoc op :type :ok, :value (ws-invoke conn op))))
+      :read (let [resp (ws-invoke conn :g_set :read op)]
+              (case (:type resp)
+                "fail" (assoc op :type :fail, :error (:return resp))))))
+
+    ;;   :read (assoc op :type :ok, :value (ws-invoke conn op))))
+
 
   (teardown! [this test])
 

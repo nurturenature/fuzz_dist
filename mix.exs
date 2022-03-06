@@ -38,6 +38,7 @@ defmodule FuzzDist.MixProject do
       {:credo, "~> 1.6", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
+      {:jason, "~> 1.3"},
       {:libcluster, "~> 3.3"}
     ]
   end
