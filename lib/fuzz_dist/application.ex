@@ -36,7 +36,7 @@ defmodule FuzzDist.Application do
     :cowboy_router.compile([
       {:_,
        [
-         {"/fuzz_dist/jepsir", FuzzDist.Jepsen.JepSir, []}
+         {"/fuzz_dist/jep_sir", FuzzDist.Jepsen.JepSir, []}
        ]}
     ])
   end

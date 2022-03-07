@@ -23,8 +23,16 @@
   (reify db/DB
     (setup! [_ test node]
       (info node "installing AntidoteDB" version)
+      (c/exec :cp :-r "/var/jepsen/shared/antidote/_build/default/rel/antidote" "/root")
+      (c/exec "bash" "-c"
+              (str "cd /root/antidote &&"
+                   " NODE_NAME=antidote@" node
+                   " COOKIE=antidote"
+                   " bin/antidote daemon"))
+
       (c/exec :cp :-r "/var/jepsen/shared/fuzz_dist" "/root")
       (c/exec "/root/fuzz_dist/bin/fuzz_dist" "daemon")
+
       (Thread/sleep 5000))
 
     ;; TODO: use Jepsen daemon, for now catch failures
@@ -33,17 +41,22 @@
       (try
         (c/exec "/root/fuzz_dist/bin/fuzz_dist" "stop")
         (catch Exception e))
+      (try
+        (c/exec "/root/antidote/bin/antidote" "stop")
+        (catch Exception e))
       (Thread/sleep 5000)
-      (c/exec :rm :-rf "/root/fuzz_dist"))
+      (c/exec :rm :-rf "/root/fuzz_dist")
+      (c/exec :rm :-rf "/root/antidote"))
 
     db/LogFiles
-    (log-files [_ test node]
-      ["/root/fuzz_dist/tmp/log"])))
+    (log-files [db test node]
+      {"/root/fuzz_dist/tmp/log" "fuzz_dist_logs"
+       "/root/antidote/logger_logs" "antidote_logs"})))
 
 (defn node-url
   "An HTTP url for connecting to a node's FuzzDist Elixir client."
   [node]
-  (str "ws://" node ":8080" "/fuzz_dist/jepsir"))
+  (str "ws://" node ":8080" "/fuzz_dist/jep_sir"))
 
 (defn ws-invoke
   "Invokes the op over the ws connection.
