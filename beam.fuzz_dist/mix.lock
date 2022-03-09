@@ -1,4 +1,6 @@
 %{
+  "antidote_pb_codec": {:hex, :antidote_pb_codec, "0.1.2", "ecf51f08ee1fee0d6e82d1b4ae68811a89660a3d65db90694a84275683aef106", [:rebar3], [], "hexpm", "b8f655b5c2d074deb1e170c9ee607a157b577f2db064d212643487aea684bb5b"},
+  "antidotec_pb": {:git, "https://github.com/AntidoteDB/antidote-erlang-client.git", "d04db8be5d19a5505789ec56fa0a5ee29e36bc2d", []},
   "bunt": {:hex, :bunt, "0.2.0", "951c6e801e8b1d2cbe58ebbd3e616a869061ddadcc4863d0a2182541acae9a38", [:mix], [], "hexpm", "7af5c7e09fe1d40f76c8e4f9dd2be7cebd83909f31fee7cd0e9eadc567da8353"},
   "cowboy": {:hex, :cowboy, "2.9.0", "865dd8b6607e14cf03282e10e934023a1bd8be6f6bacf921a7e2a96d800cd452", [:make, :rebar3], [{:cowlib, "2.11.0", [hex: :cowlib, repo: "hexpm", optional: false]}, {:ranch, "1.8.0", [hex: :ranch, repo: "hexpm", optional: false]}], "hexpm", "2c729f934b4e1aa149aff882f57c6372c15399a20d54f65c8d67bef583021bde"},
   "cowlib": {:hex, :cowlib, "2.11.0", "0b9ff9c346629256c42ebe1eeb769a83c6cb771a6ee5960bd110ab0b9b872063", [:make, :rebar3], [], "hexpm", "2b3e9da0b21c4565751a6d4901c20d1b4cc25cbb7fd50d91d2ab6dd287bc86a9"},

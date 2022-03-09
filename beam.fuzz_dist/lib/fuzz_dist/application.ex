@@ -9,6 +9,7 @@ defmodule FuzzDist.Application do
 
     children = [
       {Cluster.Supervisor, [topologies, [name: FuzzDist.ClusterSupervisor]]},
+      {Registry, name: FuzzDist.Registry, keys: :unique},
       cowboy_childspec()
     ]
 
@@ -36,7 +37,7 @@ defmodule FuzzDist.Application do
     :cowboy_router.compile([
       {:_,
        [
-         {"/fuzz_dist/jepsen/client", FuzzDist.Jepsen.Client, []}
+         {"/fuzz_dist/jep_ws", FuzzDist.Jepsen.JepWs, []}
        ]}
     ])
   end

@@ -26,6 +26,7 @@ jobs:
       # outputs: ${steps.setup-beam.outputs.(opt, elixir, rebar3)-version} (exact version installed)        
 
     - name: Restore dependency/build cache 🗃️
+      working-directory: ./beam.fuzz_dist
       uses: actions/cache@v2
       with:
         path: |
@@ -40,11 +41,13 @@ jobs:
           ${{ runner.os }}-mix-
         
     - name: Dependencies 🔗
+      working-directory: ./beam.fuzz_dist
       run: |
         mix deps.get
         mix deps.compile
 
     - name: Code 🔧
+      working-directory: ./beam.fuzz_dist
       run: |
         mix format --check-formatted
         mix compile --warnings-as-errors
@@ -53,12 +56,14 @@ jobs:
         mix docs
  
     - name: Test 🦺
+      working-directory: ./beam.fuzz_dist
       run: |
         mix test --warnings-as-errors --cover --export-coverage default
       # TODO: bug in mix doesn't respect test_coverage: [threshold: 0]
       # mix test.coverage
 
     - name: Artifacts 📚
+      working-directory: ./beam.fuzz_dist
       uses: actions/upload-artifact@v2
       with:
         name: doc-cover
