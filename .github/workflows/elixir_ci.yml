@@ -2,9 +2,9 @@ name: Elixir CI Workflow 🧪
 
 on:
   push:
-    branches: [ main, dev, scrappy ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, dev, scrappy ]
+    branches: [ main, dev ]
 
 jobs:
   elixir_ci:
@@ -26,12 +26,11 @@ jobs:
       # outputs: ${steps.setup-beam.outputs.(opt, elixir, rebar3)-version} (exact version installed)        
 
     - name: Restore dependency/build cache 🗃️
-      working-directory: ./beam.fuzz_dist
       uses: actions/cache@v2
       with:
         path: |
-          deps
-          _build
+          ./beam.fuzz_dist/deps
+          ./beam.fuzz_dist/_build
         # cache key is hierarchical: OS, otp-version, elixir-version, mix.lock
         key: ${{ runner.os }}-mix-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
         # restore keys are tried on cache misses, and only match the key prefix
@@ -45,28 +44,28 @@ jobs:
       run: |
         mix deps.get
         mix deps.compile
+      working-directory: ./beam.fuzz_dist
 
     - name: Code 🔧
-      working-directory: ./beam.fuzz_dist
       run: |
         mix format --check-formatted
         mix compile --warnings-as-errors
         mix credo --strict
         mix dialyzer
         mix docs
+      working-directory: ./beam.fuzz_dist
  
     - name: Test 🦺
-      working-directory: ./beam.fuzz_dist
       run: |
         mix test --warnings-as-errors --cover --export-coverage default
+      working-directory: ./beam.fuzz_dist
       # TODO: bug in mix doesn't respect test_coverage: [threshold: 0]
       # mix test.coverage
 
     - name: Artifacts 📚
-      working-directory: ./beam.fuzz_dist
       uses: actions/upload-artifact@v2
       with:
         name: doc-cover
         path: |
-          doc
-          cover
+          ./beam.fuzz_dist/doc
+          ./beam.fuzz_dist/cover
