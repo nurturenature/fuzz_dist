@@ -27,69 +27,68 @@
   "Invokes the op over the ws connection.
   On the BEAM side a :cowboy_websocket_handler dispatches to an Elixir @behavior."
   [conn mod fun op]
-  (s/put! conn
+  (s/try-put! conn
           (json/generate-string
            {:mod mod
             :fun fun
-            :args op}))
+            :args op})
+          5000)
 
-  (json/parse-string @(s/take! conn) true))
+  (json/parse-string @(s/try-take! conn 5000) true))
 
-  (defn db
-  "AntidoteDB for a particular version."
+(def control_root "/home/jsuttor")
+(def control_proj (str control_root "/" "projects"))
+(def control_antidote (str control_proj "/" "antidote"))
+(def control_fuzz_dist (str control_proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
+(def node_antidote "/root/antidote")
+(def node_fuzz_dist "/root/fuzz_dist")
+
+(defn db
+  "AntidoteDB."
   [version]
   (reify db/DB
     (setup! [_ test node]
-      (info "DB/setup" "AntidoteDB" node version)
-      (scp/scp! {:port 22 :private-key-path "/home/jsuttor/.ssh/id_dsa"}
-        '("/home/jsuttor/projects/antidote/_build/default/rel/antidote")
+      ;; cp from control to node to install
+      (scp/scp! {:port 22 :private-key-path (str control_root "/" ".ssh/id_rsa")}
+        [(str control_antidote "/" "_build/default/rel/antidote")]
         (str "root" "@" node ":" "/root"))
       
-      (c/cd "/root/antidote"
+      (c/cd node_antidote
         (c/exec
           (c/env {:NODE_NAME (str "antidote@" node)
                   :COOKIE "antidote"})
           "bin/antidote"
           "start"))
 
-      ;; (cu/start-daemon!
-      ;;   {:env {:NODE_NAME (str "antidote@" node)
-      ;;          :COOKIE "antidote"}
-      ;;    :chdir "/root/antidote"}
-      ;;   "bin/antidote"
-      ;;   :foreground
-      ;;   )
-
-      ;; (c/exec :cp :-r "/home/jsuttor/projects/fuzz_dist/_build/prod/rel/fuzz_dist" "/root")
-      (scp/scp! {:port 22 :private-key-path "/home/jsuttor/.ssh/id_dsa"}
-        '("/home/jsuttor/projects/fuzz_dist/_build/prod/rel/fuzz_dist")
+      ;; cp from control to node to install
+      (scp/scp! {:port 22 :private-key-path (str control_root "/" ".ssh/id_rsa")}
+        [(str control_fuzz_dist "/" "_build/prod/rel/fuzz_dist")]
         (str "root" "@" node ":" "/root"))
-      (c/exec "/root/fuzz_dist/bin/fuzz_dist" "daemon")
+
+        (c/cd node_fuzz_dist
+          (c/exec
+            (c/env {:NODE_NAME (str "fuzz_dist@" node)
+                    :COOKIE "fuzz_dist"})
+            "bin/fuzz_dist"
+            "daemon"))
 
       (Thread/sleep 5000))
 
-    ;; TODO: use Jepsen daemon, for now catch failures
     (teardown! [_ test node]
-      (info node "tearing down AntidoteDB")
-      (try
-        ;; (c/exec "/root/fuzz_dist/bin/fuzz_dist" "stop")
-        (catch Exception e))
-      (cu/stop-daemon! "empd" nil)
-      (cu/stop-daemon! "beam.smp" nil)
-      ;; (try
-      ;;   (c/exec "/root/antidote/bin/antidote" "stop")
-      ;;   (catch Exception e))
-      (Thread/sleep 5000)
-      ;; (c/exec :rm :-rf "/root/fuzz_dist")
-      ;; (c/exec :rm :-rf "/root/antidote"))
-    )
+      (cu/grepkill! "antidote")
+      (cu/grepkill! "fuzz_dist")
+      (c/exec :rm :-rf "/root/antidote")
+      (c/exec :rm :-rf "/root/fuzz_dist")
+
+      (Thread/sleep 5000))
 
     db/Primary
     (primaries [db test]
       (:nodes test))
     (setup-primary! [db test node]
       (let [conn @(http/websocket-client (node-url node))]
-            (ws-invoke conn :db :setup_primary (:nodes test))))
+            (ws-invoke conn :db :setup_primary (:nodes test))
+            (s/close! conn)))
 
     db/LogFiles
     (log-files [db test node]
@@ -117,8 +116,7 @@
   (teardown! [this test])
 
   (close! [_ test]
-    ;; TODO: close ws
-    ))
+    (s/close! conn)))
 
 (defn fuzz_dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
