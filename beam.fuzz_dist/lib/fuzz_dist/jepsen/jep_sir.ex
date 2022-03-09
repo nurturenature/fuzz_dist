@@ -19,10 +19,11 @@ defmodule FuzzDist.Jepsen.JepSir do
   @impl true
   def init(_name) do
     # blocking, possible crash in init/1, is intentional
-    antidote_conn = case :antidotec_pb_socket.start_link(String.to_charlist("localhost"), 8087) do
-      {:ok, antidote_conn} -> antidote_conn
-      {:error, error} -> raise "Antidote connection fail! #{inspect(error)}"
-    end
+    antidote_conn =
+      case :antidotec_pb_socket.start_link(String.to_charlist("localhost"), 8087) do
+        {:ok, antidote_conn} -> antidote_conn
+        {:error, error} -> raise "Antidote connection fail! #{inspect(error)}"
+      end
 
     Logger.debug("JepSir antidote_conn: #{inspect(antidote_conn)}")
 
@@ -47,5 +48,4 @@ defmodule FuzzDist.Jepsen.JepSir do
 
     {:reply, resp, state}
   end
-
 end

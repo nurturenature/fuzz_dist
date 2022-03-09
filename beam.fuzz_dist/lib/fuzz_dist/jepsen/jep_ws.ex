@@ -26,11 +26,10 @@ defmodule FuzzDist.Jepsen.JepWs do
     end
 
     {[], state}
-   end
+  end
 
   @impl true
   def websocket_handle({:text, message}, state) do
-
     {:ok, resp} = GenServer.call(via_self(), message)
 
     {[{:text, resp}], state}
@@ -44,8 +43,6 @@ defmodule FuzzDist.Jepsen.JepWs do
   end
 
   defp via_self do
-    {:via,
-    Registry,
-    {FuzzDist.Registry, self()}}
+    {:via, Registry, {FuzzDist.Registry, self()}}
   end
 end
