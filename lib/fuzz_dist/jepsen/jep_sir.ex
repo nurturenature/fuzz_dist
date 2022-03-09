@@ -1,6 +1,6 @@
 defmodule FuzzDist.Jepsen.JepSir do
   @moduledoc """
-  Generic Jepsen client for Elixir as a `:cowboy` websocket.
+  Generic Jepsen client for Elixir.
 
   Jepsen creates operations on the Control node driven by property test `:generator`s.
 
@@ -10,64 +10,42 @@ defmodule FuzzDist.Jepsen.JepSir do
   Unexpected or malformed messages crash or `raise`
   to invalidate the client in Jepsen.
   """
-  @behaviour :cowboy_websocket
+  use GenServer
 
   require Logger
 
-  @impl true
-  def init(req, opts) do
-    # no auth, upgrade to ws
-    Logger.debug("JepSir http connected: #{inspect({req, opts})}")
+  alias FuzzDist.Jepsen
 
-    {:cowboy_websocket, req, opts}
+  @impl true
+  def init(_name) do
+    # blocking, possible crash in init/1, is intentional
+    antidote_conn = case :antidotec_pb_socket.start_link(String.to_charlist("localhost"), 8087) do
+      {:ok, antidote_conn} -> antidote_conn
+      {:error, error} -> raise "Antidote connection fail! #{inspect(error)}"
+    end
+
+    Logger.debug("JepSir antidote_conn: #{inspect(antidote_conn)}")
+
+    {:ok, %{antidote_conn: antidote_conn}}
   end
 
   @impl true
-  def websocket_init(state) do
-    # ws connected and in a new process
-    Logger.debug("JepSir ws connected: #{inspect(state)}")
-
-    {[], state}
-  end
-
-  @impl true
-  def websocket_handle({:text, message}, state) do
-    Logger.debug("JepSir handle: #{inspect(message)}")
+  def handle_call(message, _from, state) do
+    Logger.debug("JepSir called: #{inspect(message)}")
 
     %{mod: mod, fun: fun, args: args} = Jason.decode!(message, keys: :atoms)
     mod = Macro.camelize(mod)
 
     resp =
       case {mod, fun, args} do
+        {"Db", "setup_primaries", nodes} -> Jepsen.Db.setup_primaries(nodes)
         {"GSet", "read", _} -> %{type: :fail, return: :not_implemented}
         _ -> %{type: :fail, return: :not_implemented}
       end
 
     resp = Jason.encode!(resp, maps: :strict)
 
-    {[{:text, resp}], state}
+    {:reply, resp, state}
   end
 
-  @impl true
-  def websocket_handle(in_frame, state) do
-    # unexpected message = framework violation = invalidates test
-    Logger.error("JepSir unexpected handle: #{inspect({in_frame, state})}")
-
-    raise "JepSir unexpected message!"
-
-    {in_frame, state}
-  end
-
-  @impl true
-  def websocket_info(info, state) do
-    Logger.warning("JepSir unexpected info: #{inspect(info)}")
-
-    {[], state}
-  end
-
-  @impl true
-  def terminate(reason, partial_req, state) do
-    Logger.debug("JepSir terminate: #{inspect({reason, partial_req, state})}")
-    :ok
-  end
 end
