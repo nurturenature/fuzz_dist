@@ -40,7 +40,6 @@ jobs:
           ${{ runner.os }}-mix-
         
     - name: Dependencies 🔗
-      working-directory: ./beam.fuzz_dist
       run: |
         mix deps.get
         mix deps.compile
