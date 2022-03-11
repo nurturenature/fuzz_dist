@@ -20,7 +20,7 @@ defmodule FuzzDist.Jepsen.JepWs do
     # ws connected and in a new process
 
     # blocking, possible crash in init/1, is intentional
-    case GenServer.start_link(Jepsen.JepSir, self(), name: via_self()) do
+    case GenServer.start_link(Jepsen.JepSir, [], name: via_self()) do
       {:ok, _pid} -> :ok
       {:error, error} -> raise "JepSir client failed to start! #{error}"
     end
