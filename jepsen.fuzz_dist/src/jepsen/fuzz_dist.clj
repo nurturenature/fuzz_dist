@@ -34,7 +34,9 @@
                 :args op})
               5000)
 
-  (json/parse-string @(s/try-take! conn 5000) true))
+  (json/parse-string @(s/try-take! conn 15000) true)
+  ;; TODO: catch timeout
+  )
 
 (def control_root "/home/jsuttor")
 (def control_proj (str control_root "/" "projects"))

@@ -30,7 +30,9 @@ defmodule FuzzDist.Jepsen.JepWs do
 
   @impl true
   def websocket_handle({:text, message}, state) do
-    {:ok, resp} = GenServer.call(via_self(), message)
+    # TODO: :infinite :timeout through entire ws call?
+    # Let Jepsen handle all timeouts?
+    {:ok, resp} = GenServer.call(via_self(), message, 15_000)
 
     {[{:text, resp}], state}
   end
