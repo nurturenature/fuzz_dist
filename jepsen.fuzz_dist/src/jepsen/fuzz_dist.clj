@@ -5,18 +5,20 @@
             [cheshire.core :as json]
             [manifold.stream :as s]
             [jepsen [cli :as cli]
+             [checker :as checker]
              [client :as client]
              [control :as c]
              [db :as db]
              [generator :as gen]
+             [nemesis :as nemesis]
              [tests :as tests]]
+            [jepsen.checker.timeline :as timeline]
             [jepsen.control.util :as cu]
             [jepsen.control.scp :as scp]
             [jepsen.os.debian :as debian]))
 
-(defn r   [_ _] {:type :invoke, :f :read, :value nil})
-(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 5)})
-(defn cas [_ _] {:type :invoke, :f :cas, :value [(rand-int 5) (rand-int 5)]})
+(defn g_set_read [_ _] {:type :invoke, :f :read, :value nil})
+(defn g_set_add  [_ _] {:type :invoke, :f :add,  :value (str (rand-int 1000000))})
 
 (defn node-url
   "An HTTP url for connecting to a node's FuzzDist Elixir client."
@@ -34,7 +36,7 @@
                 :args op})
               5000)
 
-  (json/parse-string @(s/try-take! conn 15000) true)
+  (json/parse-string @(s/try-take! conn 60000) true)
   ;; TODO: catch timeout
   )
 
@@ -130,10 +132,18 @@
     (case (:f op)
       :read (let [resp (ws-invoke conn :g_set :read op)]
               (case (:type resp)
-                "fail" (assoc op :type :fail, :error (:return resp))))))
+                "ok" (assoc op :type :ok :value (:value resp))
+                "fail" (assoc op :type :fail, :error (:return resp))))
+                ;; TODO info
+                ;; make whole path generic
 
-    ;;   :read (assoc op :type :ok, :value (ws-invoke conn op))))
-
+      :add (let [resp (ws-invoke conn :g_set :add op)]
+             (case (:type resp)
+               "ok" (assoc op :type :ok)
+               "fail" (assoc op :type :fail, :error (:return resp))))
+                ;; TODO info
+                ;; make whole path generic
+      ))
 
   (teardown! [this test])
 
@@ -150,10 +160,30 @@
           :os         debian/os
           :db         (db :git)
           :client     (Client. nil)
-          :generator  (->> r
-                           (gen/stagger 1)
-                           (gen/nemesis nil)
-                           (gen/time-limit 15))}))
+          :nemesis    (nemesis/partition-random-halves)
+          :generator  (gen/phases
+                       (->>
+                        (gen/mix [g_set_read g_set_add])
+                        (gen/stagger 1/10)
+                        (gen/nemesis (cycle [(gen/sleep 5)
+                                             {:type :info, :f :start}
+                                             (gen/sleep 5)
+                                             {:type :info, :f :stop}]))
+                        (gen/time-limit 30))
+                       (gen/nemesis {:type :info, :f :stop})
+                       (gen/log "Let database quiesce...")
+                       (gen/sleep 5)
+                       (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
+          :checker   (checker/compose
+                      {:perf       (checker/perf ;; {:nemeses #{{:name "partition"
+                                                 ;;             :start #{:start-partition}
+                                                 ;;             :stop #{:stop-partition}
+                                                 ;;             :color "#E9DCA0"}}}
+                                    )
+                       :set-full   (checker/set-full)
+                       :timeline   (timeline/html)
+                       :exceptions (checker/unhandled-exceptions)
+                       :stats      (checker/stats)})}))
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
