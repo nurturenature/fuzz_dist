@@ -169,7 +169,7 @@
                                              {:type :info, :f :start}
                                              (gen/sleep 5)
                                              {:type :info, :f :stop}]))
-                        (gen/time-limit 30))
+                        (gen/time-limit (:time-limit opts)))
                        (gen/nemesis {:type :info, :f :stop})
                        (gen/log "Let database quiesce...")
                        (gen/sleep 5)

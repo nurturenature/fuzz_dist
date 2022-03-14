@@ -1,6 +1,13 @@
 defmodule FuzzDist.Jepsen.JepWs do
   @moduledoc """
-  Websocket endpoint for a `JepSir` client as a `:cowboy_websocket`.
+  The Jepsen Clojure client connects here via a websocket.
+
+  The connection is passed to a `GenServer` (`JepSir`) that acts as an Elixir client
+  for database interactions.
+
+  Websocket is straight passthru, no management, `:timeout`, or similar.
+
+  Let client on either end, Jepsen or Elixir, manage the connection.
   """
 
   @behaviour :cowboy_websocket
@@ -17,9 +24,7 @@ defmodule FuzzDist.Jepsen.JepWs do
 
   @impl true
   def websocket_init(state) do
-    # ws connected and in a new process
-
-    # blocking, possible crash in init/1, is intentional
+    # blocking, crash, raise, in init/1 is intentional
     case GenServer.start_link(Jepsen.JepSir, [], name: via_self()) do
       {:ok, _pid} -> :ok
       {:error, error} -> raise "JepSir client failed to start! #{error}"
@@ -30,8 +35,6 @@ defmodule FuzzDist.Jepsen.JepWs do
 
   @impl true
   def websocket_handle({:text, message}, state) do
-    # TODO: :infinite :timeout through entire ws call?
-    # Let Jepsen handle all timeouts?
     {:ok, resp} = GenServer.call(via_self(), message, :infinity)
 
     {[{:text, resp}], state}
