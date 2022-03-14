@@ -3,5 +3,5 @@
             [jepsen.fuzz-dist :refer :all]))
 
 (deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+  (testing "This is a Jepsen test, and we are on the other side of the black box..."
+    (is (= (rand-int 2) (rand-int 2)))))

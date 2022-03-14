@@ -1,4 +1,4 @@
-(ns jepsen.fuzz_dist
+(ns jepsen.fuzz-dist
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [aleph.http :as http]
@@ -17,8 +17,8 @@
             [jepsen.control.scp :as scp]
             [jepsen.os.debian :as debian]))
 
-(defn g_set_read [_ _] {:type :invoke, :f :read, :value nil})
-(defn g_set_add  [_ _] {:type :invoke, :f :add,  :value (str (rand-int 1000000))})
+(defn g-set-read [_ _] {:type :invoke, :f :read, :value nil})
+(defn g-set-add  [_ _] {:type :invoke, :f :add,  :value (str (rand-int 1000000))})
 
 (defn node-url
   "An HTTP url for connecting to a node's FuzzDist Elixir client."
@@ -40,12 +40,12 @@
   ;; TODO: catch timeout
   )
 
-(def control_root "/home/jsuttor")
-(def control_proj (str control_root "/" "projects"))
-(def control_antidote (str control_proj "/" "antidote"))
-(def control_fuzz_dist (str control_proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
-(def node_antidote "/root/antidote")
-(def node_fuzz_dist "/root/fuzz_dist")
+(def control-root "/home/jsuttor")
+(def control-proj (str control-root "/" "projects"))
+(def control-antidote (str control-proj "/" "antidote"))
+(def control-fuzz-dist (str control-proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
+(def node-antidote "/root/antidote")
+(def node-fuzz-dist "/root/fuzz_dist")
 
 (defn db
   "AntidoteDB."
@@ -53,13 +53,13 @@
   (reify db/DB
     (setup! [_ test node]
       ;; cp from control to node to install
-      (scp/scp! {:port 22 :private-key-path (str control_root "/" ".ssh/id_rsa")}
-                [(str control_antidote "/" "_build/default/rel/antidote")]
+      (scp/scp! {:port 22 :private-key-path (str control-root "/" ".ssh/id_rsa")}
+                [(str control-antidote "/" "_build/default/rel/antidote")]
                 (str "root" "@" node ":" "/root"))
 
       (let [[_ node_num] node]
         ;; TODO: get ip from host
-        (c/cd node_antidote
+        (c/cd node-antidote
               (c/exec
                (c/env {:NODE_NAME (str "antidote@" "192.168.122.10" node_num)
                        :COOKIE "antidote"})
@@ -67,11 +67,11 @@
                "daemon")))
 
       ;; cp from control to node to install
-      (scp/scp! {:port 22 :private-key-path (str control_root "/" ".ssh/id_rsa")}
-                [(str control_fuzz_dist "/" "_build/prod/rel/fuzz_dist")]
+      (scp/scp! {:port 22 :private-key-path (str control-root "/" ".ssh/id_rsa")}
+                [(str control-fuzz-dist "/" "_build/prod/rel/fuzz_dist")]
                 (str "root" "@" node ":" "/root"))
 
-      (c/cd node_fuzz_dist
+      (c/cd node-fuzz-dist
             (c/exec
              (c/env {:NODE_NAME (str "fuzz_dist@" node)
                      :COOKIE "fuzz_dist"})
@@ -82,13 +82,13 @@
 
     (teardown! [_ test node]
       (try
-        (c/cd node_antidote
+        (c/cd node-antidote
               (c/exec
                (c/env {:NODE_NAME (str "antidote@" node)
                        :COOKIE "antidote"})
                "bin/antidote"
                "stop"))
-        (c/cd node_fuzz_dist
+        (c/cd node-fuzz-dist
               (c/exec
                (c/env {:NODE_NAME (str "fuzz_dist@" node)
                        :COOKIE "fuzz_dist"})
@@ -150,36 +150,35 @@
   (close! [_ test]
     (s/close! conn)))
 
-(defn fuzz_dist-test
+(defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
                       :concurrency, ...), constructs a test map."
   [opts]
   (merge tests/noop-test
          opts
-         {:name       "fuzz_dist"
+         {:name       "fuzz-dist"
           :os         debian/os
           :db         (db :git)
           :client     (Client. nil)
           :nemesis    (nemesis/partition-random-halves)
           :generator  (gen/phases
                        (->>
-                        (gen/mix [g_set_read g_set_add])
+                        (gen/mix [g-set-read g-set-add])
                         (gen/stagger 1/10)
                         (gen/nemesis (cycle [(gen/sleep 5)
                                              {:type :info, :f :start}
                                              (gen/sleep 5)
                                              {:type :info, :f :stop}]))
-                        (gen/time-limit 30))
+                        (gen/time-limit (:time-limit opts)))
                        (gen/nemesis {:type :info, :f :stop})
                        (gen/log "Let database quiesce...")
                        (gen/sleep 5)
                        (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
           :checker   (checker/compose
-                      {:perf       (checker/perf ;; {:nemeses #{{:name "partition"
-                                                 ;;             :start #{:start-partition}
-                                                 ;;             :stop #{:stop-partition}
-                                                 ;;             :color "#E9DCA0"}}}
-                                    )
+                      {:perf       (checker/perf {:nemeses #{{:name "partition"
+                                                              :start #{:start}
+                                                              :stop #{:stop}
+                                                              :color "#E9DCA0"}}})
                        :set-full   (checker/set-full)
                        :timeline   (timeline/html)
                        :exceptions (checker/unhandled-exceptions)
@@ -189,6 +188,6 @@
   "Handles command line arguments. Can either run a test, or a web server for
                 browsing results."
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn fuzz_dist-test})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn fuzz-dist-test})
                    (cli/serve-cmd))
             args))

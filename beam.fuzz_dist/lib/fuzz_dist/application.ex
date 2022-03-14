@@ -13,7 +13,7 @@ defmodule FuzzDist.Application do
       cowboy_childspec()
     ]
 
-    opts = [strategy: :one_for_one, name: FuzzDist.ApplicationSupervisor]
+    opts = [strategy: :rest_for_one, name: FuzzDist.ApplicationSupervisor]
 
     Supervisor.start_link(children, opts)
   end
