@@ -43,7 +43,7 @@ Is the application's implementation standing firmly on and aligned with the BEAM
 
 Fuzz near
 - partition duration ~ `NetTickTime`
-  - -> `:NODEDOWN`, `:NODEUP`
+  - -> `:nodedown`, `:nodeup`
 - network faults ~ `GenServer.call(:timeout)`
   - -> `{:error, :timeout}`
 - ...

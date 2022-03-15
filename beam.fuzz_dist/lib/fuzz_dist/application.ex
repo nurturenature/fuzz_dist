@@ -8,6 +8,7 @@ defmodule FuzzDist.Application do
     topologies = [gossip: [strategy: Cluster.Strategy.Gossip]]
 
     children = [
+      {FuzzDist.Telemetry, []},
       {Cluster.Supervisor, [topologies, [name: FuzzDist.ClusterSupervisor]]},
       {Registry, name: FuzzDist.Registry, keys: :unique},
       cowboy_childspec()
