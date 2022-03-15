@@ -24,7 +24,7 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   @impl true
   def init(_args) do
-    # blocking, possible crash in init/1, is intentional
+    # blocking, crash, raise in init/1, is intentional
     antidote_conn =
       case :antidotec_pb_socket.start_link(String.to_charlist("127.0.0.1"), 8087) do
         {:ok, antidote_conn} -> antidote_conn
@@ -45,25 +45,26 @@ defmodule FuzzDist.Jepsen.JepSir do
 
     resp =
       case {mod, fun, args} do
-        {"Db", "setup_primary", nodes} ->
-          :ok = Jepsen.Antidote.setup_primary(antidote_conn, nodes)
+        {"GSet", "add", %{value: value}} ->
+          :ok = Jepsen.Antidote.g_set_add(antidote_conn, value)
           %{type: :ok}
 
         {"GSet", "read", _} ->
           {:ok, value} = Jepsen.Antidote.g_set_read(antidote_conn)
           %{type: :ok, value: value}
 
-        {"GSet", "add", %{value: value}} ->
-          :ok = Jepsen.Antidote.g_set_add(antidote_conn, value)
+        {"Db", "setup_primary", nodes} ->
+          :ok = Jepsen.Antidote.setup_primary(antidote_conn, nodes)
           %{type: :ok}
 
         _ ->
-          %{type: :fail, return: :not_implemented}
+          %{type: :fail, error: :not_implemented}
       end
 
     resp = Jason.encode!(resp, maps: :strict)
 
     Logger.debug("JepSir resp: #{inspect(resp)}")
+
     {:reply, {:ok, resp}, state}
   end
 end

@@ -20,6 +20,17 @@
 (defn g-set-read [_ _] {:type :invoke, :f :read, :value nil})
 (defn g-set-add  [_ _] {:type :invoke, :f :add,  :value (str (rand-int 1000000))})
 
+(def control-root "/home/jsuttor")
+(def control-proj (str control-root "/" "projects"))
+(def control-antidote (str control-proj "/" "antidote"))
+(def control-fuzz-dist (str control-proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
+(def node-antidote "/root/antidote")
+(def node-fuzz-dist "/root/fuzz_dist")
+
+(defn n-to-fqdn [node app] (let [[n num] node]
+                             (str app "@" "192.168.122.10" num)))
+(defn nodes-to-fqdn [nodes app] (map #(n-to-fqdn % app) nodes))
+
 (defn node-url
   "An HTTP url for connecting to a node's FuzzDist Elixir client."
   [node]
@@ -40,13 +51,6 @@
   ;; TODO: catch timeout
   )
 
-(def control-root "/home/jsuttor")
-(def control-proj (str control-root "/" "projects"))
-(def control-antidote (str control-proj "/" "antidote"))
-(def control-fuzz-dist (str control-proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
-(def node-antidote "/root/antidote")
-(def node-fuzz-dist "/root/fuzz_dist")
-
 (defn db
   "AntidoteDB."
   [version]
@@ -57,14 +61,12 @@
                 [(str control-antidote "/" "_build/default/rel/antidote")]
                 (str "root" "@" node ":" "/root"))
 
-      (let [[_ node_num] node]
-        ;; TODO: get ip from host
-        (c/cd node-antidote
-              (c/exec
-               (c/env {:NODE_NAME (str "antidote@" "192.168.122.10" node_num)
-                       :COOKIE "antidote"})
-               "bin/antidote"
-               "daemon")))
+      (c/cd node-antidote
+            (c/exec
+             (c/env {:NODE_NAME (n-to-fqdn node "antidote")
+                     :COOKIE "antidote"})
+             "bin/antidote"
+             "daemon"))
 
       ;; cp from control to node to install
       (scp/scp! {:port 22 :private-key-path (str control-root "/" ".ssh/id_rsa")}
@@ -73,7 +75,7 @@
 
       (c/cd node-fuzz-dist
             (c/exec
-             (c/env {:NODE_NAME (str "fuzz_dist@" node)
+             (c/env {:NODE_NAME (n-to-fqdn node "fuzz_dist")
                      :COOKIE "fuzz_dist"})
              "bin/fuzz_dist"
              "daemon"))
@@ -84,13 +86,13 @@
       (try
         (c/cd node-antidote
               (c/exec
-               (c/env {:NODE_NAME (str "antidote@" node)
+               (c/env {:NODE_NAME (n-to-fqdn node "antidote")
                        :COOKIE "antidote"})
                "bin/antidote"
                "stop"))
         (c/cd node-fuzz-dist
               (c/exec
-               (c/env {:NODE_NAME (str "fuzz_dist@" node)
+               (c/env {:NODE_NAME (n-to-fqdn node "fuzz_dist")
                        :COOKIE "fuzz_dist"})
                "bin/fuzz_dist"
                "stop"))
@@ -111,7 +113,9 @@
       ;; TODO Antidote wants FQDN, map n# to ip and pass ip's
       (let [conn @(http/websocket-client (node-url node))]
       ;; TODO test type: :ok response
-        (info ":db :setup_primary return:" (ws-invoke conn :db :setup_primary (:nodes test)))
+        (info ":db :setup_primary return:" (ws-invoke conn
+                                                      :db
+                                                      :setup_primary (nodes-to-fqdn (:nodes test) "antidote")))
         (s/close! conn)))
 
     db/LogFiles
@@ -130,20 +134,14 @@
 
   (invoke! [_ test op]
     (case (:f op)
-      :read (let [resp (ws-invoke conn :g_set :read op)]
-              (case (:type resp)
-                "ok" (assoc op :type :ok :value (:value resp))
-                "fail" (assoc op :type :fail, :error (:return resp))))
-                ;; TODO info
-                ;; make whole path generic
-
       :add (let [resp (ws-invoke conn :g_set :add op)]
              (case (:type resp)
-               "ok" (assoc op :type :ok)
-               "fail" (assoc op :type :fail, :error (:return resp))))
-                ;; TODO info
-                ;; make whole path generic
-      ))
+               "ok"   (assoc op :type :ok)
+               "fail" (assoc op :type :fail, :error (:error resp))))
+      :read (let [resp (ws-invoke conn :g_set :read op)]
+              (case (:type resp)
+                "ok"   (assoc op :type :ok,   :value (:value resp))
+                "fail" (assoc op :type :fail, :error (:error resp))))))
 
   (teardown! [this test])
 
