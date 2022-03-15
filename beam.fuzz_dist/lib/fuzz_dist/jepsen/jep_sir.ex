@@ -24,7 +24,7 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   @impl true
   def init(_args) do
-    # blocking, possible crash in init/1, is intentional
+    # blocking, crash, raise in init/1, is intentional
     antidote_conn =
       case :antidotec_pb_socket.start_link(String.to_charlist("127.0.0.1"), 8087) do
         {:ok, antidote_conn} -> antidote_conn

@@ -17,15 +17,15 @@ Generative property testing of...
 > 
 > -- <cite>Every Developer ever...</cite>
 
-Using Jepsen is not a casual undertaking.
-After over a decade of Jepsen providing immense value, there's still only one Kyle Kingsbury and selective industry adoption.
+Using Jepsen meaningfully, like all dist-sys endeavors, is a meaningful commitment.
 
 `fuzz_dist` is an exploratory effort to bring Jepsen and BEAM applications together in a more approachable way.
 
 - generic'ish Elixir client
   - write test operations as Elixir `@behavior`s vs Clojure functions
+  - follows common user connects with a websocket to nearest local node which is geo clustered architecture 
 - build/test/run environment pre-configured for BEAM
-- more effecient/effective fault injection
+- more efficient/effective fault injection
 
 ---
 
@@ -35,16 +35,24 @@ After over a decade of Jepsen providing immense value, there's still only one Ky
 > 
 > -- <cite>Dalai Lama XIV</cite>
 
-Distributed Erlang is resilient. Applications can use these primitive to implement powerful algorithms.
-
-`fuzz_dist` tunes Jepsen's `Nemesis` generators to fuzz at the distributed Erlang boundary values, triggers.  e.g.
-
-- partition durations
-  - fuzz near HEARTBEAT to trigger `:NODEUP`, `:NODEDOWN`
-- network faults
-  - fuzz near `GenServer.call(:timeout)` to trigger timeouts, retries
+Distributed Erlang is resilient. Applications can use these primitives to implement powerful algorithms.
 
 Is the application's implementation standing firmly on and aligned with the BEAM?
+
+`fuzz_dist` directs Jepsen's `Nemesis` generators to fuzz at the distributed Erlang boundary values, triggers.
+
+Fuzz near
+- partition duration ~ `NetTickTime`
+  - -> `:NODEDOWN`, `:NODEUP`
+- network faults ~ `GenServer.call(:timeout)`
+  - -> `{:error, :timeout}`
+- ...
+
+The BEAM was built to be observed. Add these observations during fault injection to the application's OpenTelemetry. Link anomalies to metrics/spans/logs of both the application and the BEAM.
+
+- `erlang:monitor(time_offset, clock_service)`
+- `erlang:monitor_node(Node, Flag, Options)`
+- ...
 
 ---
 
@@ -59,17 +67,15 @@ The current state of `fuzz_dist` is very much at the
 :hello
   |> world()
 ```
-stage. The simple tests and configurations are helping to develop and evaluate the idea of a more approachable Jepsen testing of BEAM applications. They are not real tests of AntidoteDB.
+stage. The simple tests and configurations are helping to develop and evaluate the idea of a more approachable Jepsen testing of BEAM applications.
 
 ---
 
-### Jepsen Tests Are Living Tests
+## Jepsen Tests Are Living Tests
 
 
 Many thanks to @aphyr and https://jepsen.io for https://github.com/jepsen-io/jepsen.
 
 ---
 
-### For Next
-
-Elixir client emits telemerty events linking Jepsen test operations (and failures!). Go from a Jepsen anomoly report to your apps telemetry/spans/logs.
+## .next()
