@@ -1,16 +1,83 @@
 defmodule FuzzDist.Telemetry do
   @moduledoc """
-    Telemetry integration.
+  Telemetry integration.
 
-    `FuzzDist` executes the following events:
+  Match `:ok = :telemetry/all` as telemetry is expected as part of test.
 
-    * `[:fuzz_dist, :beam]` - Executed on receipt of BEAM monitored message/signal.
+  `FuzzDist` executes the following events:
 
-      #### Metadata:
+  * `[:fuzz_dist, :beam]` - Executed on receipt of BEAM monitored message/signal.
 
-        * `:event` - The BEAM event
+    #### Measurements
 
-    TODO: add Prometheus collector.
+      * `%{}`
+
+    #### Metadata:
+
+      * `:event` - The BEAM event
+
+  * `[:fuzz_dist, :g_set_read, :start]` - Executed on receipt of Jepsen :read operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `%{}`
+
+  * `[:fuzz_dist, :g_set_read, :stop]` - Executed on completion of read before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the read.
+
+    #### Metadata:
+
+      * :value - Value returned by read.
+
+  * `[:fuzz_dist, :g_set_add, :start]` - Executed on receipt of Jepsen :add operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `value`: - The value to be added
+
+  * `[:fuzz_dist, :g_set_add, :stop]` - Executed on completion of add before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the read.
+
+    #### Metadata:
+
+      * `%{}`
+
+  * `[:fuzz_dist, :setup_primary, :start]` - Executed on receipt of Jepsen :setup_primary operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `nodes` - List of (long) node names
+
+  * `[:fuzz_dist, :setup_primary, :stop]` - Executed on completion of `setup_primary/1` before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the cluster configuration
+
+    #### Metadata:
+
+      * `%{}`
+
+
+  TODO: add Prometheus collector.
   """
 
   use GenServer
@@ -23,10 +90,26 @@ defmodule FuzzDist.Telemetry do
 
   @impl true
   def init(_args) do
+    # blocking, crash, intentional in init/1.
+
     :ok = :net_kernel.monitor_nodes(true)
     monitor_ref = :erlang.monitor(:time_offset, :clock_service)
 
-    :ok = :telemetry.attach(:fuzz_dist, [:fuzz_dist, :beam], &log_handler/4, nil)
+    :ok =
+      :telemetry.attach_many(
+        :fuzz_dist,
+        [
+          [:fuzz_dist, :beam],
+          [:fuzz_dist, :g_set_add, :start],
+          [:fuzz_dist, :g_set_add, :stop],
+          [:fuzz_dist, :g_set_read, :start],
+          [:fuzz_dist, :g_set_read, :stop],
+          [:fuzz_dist, :setup_primary, :start],
+          [:fuzz_dist, :setup_primary, :stop]
+        ],
+        &FuzzDist.Telemetry.log_handler/4,
+        nil
+      )
 
     {:ok, %{monitor_ref: monitor_ref}}
   end
@@ -34,7 +117,7 @@ defmodule FuzzDist.Telemetry do
   @impl true
   def handle_info({node_state, _node} = message, state)
       when node_state == :nodeup or node_state == :nodedown do
-    event(:beam, %{}, %{event: message})
+    :ok = event(:beam, %{}, %{event: message})
 
     {:noreply, state}
   end
@@ -43,7 +126,7 @@ defmodule FuzzDist.Telemetry do
   @impl true
   def handle_info({'CHANGE', monitor_ref, _type, _item, _new_time_offset} = message, state)
       when monitor_ref == state.monitor_ref do
-    event(:beam, %{}, %{event: message})
+    :ok = event(:beam, %{}, %{event: message})
 
     {:noreply, state}
   end
@@ -51,7 +134,7 @@ defmodule FuzzDist.Telemetry do
   @doc false
   # Used for reporting generic events
   def event(event, measurements, meta) do
-    :telemetry.execute([:fuzz_dist, event], measurements, meta)
+    :ok = :telemetry.execute([:fuzz_dist, event], measurements, meta)
   end
 
   @doc false
@@ -59,11 +142,12 @@ defmodule FuzzDist.Telemetry do
   def start(event, meta \\ %{}, extra_measurements \\ %{}) do
     start_time = System.monotonic_time()
 
-    :telemetry.execute(
-      [:fuzz_dist, event, :start],
-      Map.merge(extra_measurements, %{system_time: System.system_time()}),
-      meta
-    )
+    :ok =
+      :telemetry.execute(
+        [:fuzz_dist, event, :start],
+        Map.merge(extra_measurements, %{system_time: System.system_time()}),
+        meta
+      )
 
     start_time
   end
@@ -74,11 +158,12 @@ defmodule FuzzDist.Telemetry do
     end_time = System.monotonic_time()
     measurements = Map.merge(extra_measurements, %{duration: end_time - start_time})
 
-    :telemetry.execute(
-      [:fuzz_dist, event, :stop],
-      measurements,
-      meta
-    )
+    :ok =
+      :telemetry.execute(
+        [:fuzz_dist, event, :stop],
+        measurements,
+        meta
+      )
   end
 
   @doc false
@@ -92,10 +177,10 @@ defmodule FuzzDist.Telemetry do
       |> Map.put(:error, reason)
       |> Map.put(:stacktrace, stack)
 
-    :telemetry.execute([:fuzz_dist, event, :exception], measurements, meta)
+    :ok = :telemetry.execute([:fuzz_dist, event, :exception], measurements, meta)
   end
 
-  defp log_handler(event, measurements, meta, _config) do
+  def log_handler(event, measurements, meta, _config) do
     Logger.debug("Telemetry: [#{inspect(event)}, #{inspect(measurements)}, #{inspect(meta)}]")
   end
 end

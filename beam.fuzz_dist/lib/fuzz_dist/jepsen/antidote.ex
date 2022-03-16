@@ -41,9 +41,7 @@ defmodule FuzzDist.Jepsen.Antidote do
   end
 
   @impl true
-  def setup_primary(antidote_conn, nodes) do
-    Logger.debug("DB.setup_primary(#{inspect(nodes)}) on #{inspect(antidote_conn)}")
-
+  def setup_primary(_antidote_conn, nodes) do
     nodes_to_conns =
       Enum.reduce(nodes, %{}, fn antidote_node, acc ->
         [_name, host] = String.split(antidote_node, "@")
@@ -73,8 +71,6 @@ defmodule FuzzDist.Jepsen.Antidote do
     Enum.each(Map.to_list(nodes_to_conns), fn {_node, conn} ->
       :ok = :antidotec_pb_socket.stop(conn)
     end)
-
-    Logger.debug("Db.setup_primary :ok")
 
     :ok
   end
