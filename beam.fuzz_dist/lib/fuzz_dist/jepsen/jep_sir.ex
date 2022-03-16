@@ -16,7 +16,7 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   require Logger
 
-  alias FuzzDist.Jepsen
+  alias FuzzDist.{Jepsen, Telemetry}
 
   @callback g_set_add(antidote_conn :: pid(), value :: binary()) :: :ok
   @callback g_set_read(antidote_conn :: pid()) :: {:ok, binary()}
@@ -38,32 +38,45 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   @impl true
   def handle_call(message, _from, %{antidote_conn: antidote_conn} = state) do
-    Logger.debug("JepSir called: #{inspect(message)} on #{inspect(antidote_conn)}")
-
     %{mod: mod, fun: fun, args: args} = Jason.decode!(message, keys: :atoms)
     mod = Macro.camelize(mod)
 
     resp =
       case {mod, fun, args} do
         {"GSet", "add", %{value: value}} ->
+          start_time = Telemetry.start(:g_set_add, %{value: value})
+
           :ok = Jepsen.Antidote.g_set_add(antidote_conn, value)
+
+          Telemetry.stop(:g_set_add, start_time)
+
           %{type: :ok}
 
         {"GSet", "read", _} ->
+          start_time = Telemetry.start(:g_set_read)
+
           {:ok, value} = Jepsen.Antidote.g_set_read(antidote_conn)
+
+          Telemetry.stop(:g_set_read, start_time, %{value: value})
+
           %{type: :ok, value: value}
 
         {"Db", "setup_primary", nodes} ->
+          start_time = Telemetry.start(:setup_primary, %{nodes: nodes})
+
           :ok = Jepsen.Antidote.setup_primary(antidote_conn, nodes)
+
+          Telemetry.stop(:setup_primary, start_time)
+
           %{type: :ok}
 
-        _ ->
+        op ->
+          Logger.error("JepSir :not_implemented #{inspect(op)}")
+
           %{type: :fail, error: :not_implemented}
       end
 
     resp = Jason.encode!(resp, maps: :strict)
-
-    Logger.debug("JepSir resp: #{inspect(resp)}")
 
     {:reply, {:ok, resp}, state}
   end
