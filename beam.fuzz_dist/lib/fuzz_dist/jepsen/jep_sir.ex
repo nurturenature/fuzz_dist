@@ -31,7 +31,7 @@ defmodule FuzzDist.Jepsen.JepSir do
         {:error, error} -> raise "Antidote connection fail! #{inspect(error)}"
       end
 
-    Logger.debug("JepSir init w/antidote_conn: #{inspect(antidote_conn)}")
+    Telemetry.event(:client, %{}, %{antidote_conn: antidote_conn})
 
     {:ok, %{antidote_conn: antidote_conn}}
   end
