@@ -16,6 +16,16 @@ defmodule FuzzDist.Telemetry do
 
       * `:event` - The BEAM event
 
+  * `[:fuzz_dist, :client]` - Executed on connection of Jepsen client ws connection
+
+    #### Measurements
+
+      * `%{}`
+
+    #### Metadata:
+
+      * `:antidote_conn` - AntidoteDB connection that client will use for all transactions
+
   * `[:fuzz_dist, :g_set_read, :start]` - Executed on receipt of Jepsen :read operation.
 
     #### Measurements
@@ -122,7 +132,6 @@ defmodule FuzzDist.Telemetry do
     {:noreply, state}
   end
 
-  # TODO:
   @impl true
   def handle_info({'CHANGE', monitor_ref, _type, _item, _new_time_offset} = message, state)
       when monitor_ref == state.monitor_ref do
