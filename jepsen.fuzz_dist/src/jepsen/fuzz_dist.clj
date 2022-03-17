@@ -148,6 +148,18 @@
   (close! [_ test]
     (s/close! conn)))
 
+(defn full-nemesis
+  "Merges together all nemeses"
+  [opts]
+  (nemesis/compose
+   {{:start-maj-min  :start
+     :stop-maj-min   :stop} (nemesis/partition-random-halves)
+    {:start-isolated :start
+     :stop-isolated  :stop} (nemesis/partition-random-node)}))
+
+(defn rnd-sleep    [] (+ 1 (rand-int 2)))
+(defn rnd-duration [] (+ 2 (rand-int 5)))
+
 (defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
                       :concurrency, ...), constructs a test map."
@@ -158,25 +170,42 @@
           :os         debian/os
           :db         (db :git)
           :client     (Client. nil)
-          :nemesis    (nemesis/partition-random-halves)
+          :nemesis    (full-nemesis opts)
           :generator  (gen/phases
                        (->>
                         (gen/mix [g-set-read g-set-add])
                         (gen/stagger 1/10)
-                        (gen/nemesis (cycle [(gen/sleep 5)
-                                             {:type :info, :f :start}
-                                             (gen/sleep 5)
-                                             {:type :info, :f :stop}]))
-                        (gen/time-limit (:time-limit opts)))
-                       (gen/nemesis {:type :info, :f :stop})
+                        (gen/nemesis (gen/cycle
+                                      (gen/phases
+                                       (gen/sleep (rnd-sleep))
+                                       {:type :info, :f :start-maj-min}
+                                       (gen/sleep (rnd-duration))
+                                       {:type :info, :f :stop-maj-min}
+                                       (gen/sleep (rnd-sleep))
+
+                                       (gen/sleep (rnd-sleep))
+                                       {:type :info, :f :start-isolated}
+                                       (gen/sleep (rnd-duration))
+                                       {:type :info, :f :stop-isolated}
+                                       (gen/sleep (rnd-sleep)))))
+
+                        (gen/time-limit (or (:time-limit opts) 60)))
+
+                       (gen/nemesis {:type :info, :f :stop-maj-min})
+                       (gen/nemesis {:type :info, :f :stop-isolated})
                        (gen/log "Let database quiesce...")
                        (gen/sleep 5)
+
                        (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
           :checker   (checker/compose
                       {:perf       (checker/perf {:nemeses #{{:name "partition"
-                                                              :start #{:start}
-                                                              :stop #{:stop}
-                                                              :color "#E9DCA0"}}})
+                                                              :start #{:start-maj-min}
+                                                              :stop  #{:stop-maj-min}
+                                                              :color "#E9DCA0"}
+                                                             {:name "isolated dc"
+                                                              :start #{:start-isolated}
+                                                              :stop  #{:stop-isolated}
+                                                              :color "#E9A4A0"}}})
                        :set-full   (checker/set-full)
                        :timeline   (timeline/html)
                        :exceptions (checker/unhandled-exceptions)
