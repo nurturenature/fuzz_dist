@@ -19,11 +19,11 @@ Generative property testing of...
 
 Using Jepsen meaningfully, like all dist-sys endeavors, is a meaningful commitment.
 
-`fuzz_dist` is an exploratory effort to bring Jepsen and BEAM applications together in a more approachable way.
+`fuzz_dist` is an effort to bring Jepsen and BEAM applications together in a more approachable way.
 
 - generic'ish Elixir client
-  - write test operations as Elixir `@behavior`s vs Clojure functions
-  - follows common user connects with a websocket to nearest local node which is geo clustered architecture 
+  - test operations as Elixir `@behavior`s vs Clojure `(fn )`
+  - classic user connects via websocket to nearest local node which is geo clustered architecture 
 - build/test/run environment pre-configured for BEAM
 - more efficient/effective fault injection
 
@@ -39,7 +39,7 @@ Distributed Erlang is resilient. Applications can use these primitives to implem
 
 Is the application's implementation standing firmly on and aligned with the BEAM?
 
-`fuzz_dist` directs Jepsen's `Nemesis` generators to fuzz at the distributed Erlang boundary values, triggers.
+`fuzz_dist` directs Jepsen's `nemesis` generators to fuzz at distributed Erlang boundary values, triggers.
 
 Fuzz near
 - partition duration ~ `NetTickTime`
@@ -50,8 +50,9 @@ Fuzz near
 
 The BEAM was built to be observed. Add these observations during fault injection to the application's OpenTelemetry. Link anomalies to metrics/spans/logs of both the application and the BEAM.
 
-- `erlang:monitor(time_offset, clock_service)`
-- `erlang:monitor_node(Node, Flag, Options)`
+- `erlang:monitor(:nodes, :time/clock_services, ...)`
+- Jepsen operations,injected faults ->
+  - `Telemetry.execute(:trouble, :start)`
 - ...
 
 ---
@@ -65,9 +66,44 @@ The BEAM was built to be observed. Add these observations during fault injection
 The current state of `fuzz_dist` is very much at the
 ```elixir
 :hello
-  |> world()
+  |> world("!")
 ```
 stage. The simple tests and configurations are helping to develop and evaluate the idea of a more approachable Jepsen testing of BEAM applications.
+
+Current AntidoteDB test shows:
+- setup/teardown
+  - build/install
+  - configure cluster (5 * dc1n1)
+  - capture logs
+- client
+  - Elixir `@behavior` using Erlang client API
+  - `static:` transactions
+- operations generator
+  - random mix of adds/reads across cluster
+- nemesis (fault injection)
+  - majority/minority partition, random membership
+  - isolate an individual data center
+- model/checker
+  - grow-set
+- basic stats/analysis
+
+---
+
+## .next()
+
+### Tests
+- make workflows generative, config property vaues/ranges
+- improve analysis reports
+
+
+### Client
+- add `:interactive` transactions
+  - and ability to abort
+- more comprehensive Telemetry
+
+### Environment
+- more erogonmic
+- easier to package/deploy
 
 ---
 
@@ -78,4 +114,3 @@ Many thanks to @aphyr and https://jepsen.io for https://github.com/jepsen-io/jep
 
 ---
 
-## .next()

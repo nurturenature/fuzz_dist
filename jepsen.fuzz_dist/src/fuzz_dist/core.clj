@@ -1,4 +1,4 @@
-(ns jepsen.fuzz-dist
+(ns fuzz-dist.core
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [aleph.http :as http]
@@ -10,12 +10,12 @@
              [control :as c]
              [db :as db]
              [generator :as gen]
-             [nemesis :as nemesis]
              [tests :as tests]]
             [jepsen.checker.timeline :as timeline]
             [jepsen.control.util :as cu]
             [jepsen.control.scp :as scp]
-            [jepsen.os.debian :as debian]))
+            [jepsen.os.debian :as debian]
+            [fuzz-dist.nemesis :as fd-nemesis]))
 
 (defn g-set-read [_ _] {:type :invoke, :f :read, :value nil})
 (defn g-set-add  [_ _] {:type :invoke, :f :add,  :value (str (rand-int 1000000))})
@@ -148,18 +148,6 @@
   (close! [_ test]
     (s/close! conn)))
 
-(defn full-nemesis
-  "Merges together all nemeses"
-  [opts]
-  (nemesis/compose
-   {{:start-maj-min  :start
-     :stop-maj-min   :stop} (nemesis/partition-random-halves)
-    {:start-isolated :start
-     :stop-isolated  :stop} (nemesis/partition-random-node)}))
-
-(defn rnd-sleep    [] (+ 1 (rand-int 2)))
-(defn rnd-duration [] (+ 2 (rand-int 5)))
-
 (defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
                       :concurrency, ...), constructs a test map."
@@ -170,51 +158,82 @@
           :os         debian/os
           :db         (db :git)
           :client     (Client. nil)
-          :nemesis    (full-nemesis opts)
+          :nemesis    (fd-nemesis/full-nemesis opts)
+          :pure-generators true
           :generator  (gen/phases
                        (->>
                         (gen/mix [g-set-read g-set-add])
-                        (gen/stagger 1/10)
+                        (gen/stagger (/ (:rate opts)))
                         (gen/nemesis (gen/cycle
                                       (gen/phases
-                                       (gen/sleep (rnd-sleep))
+                                       (gen/sleep 2)
                                        {:type :info, :f :start-maj-min}
-                                       (gen/sleep (rnd-duration))
+                                       (gen/sleep 6)
                                        {:type :info, :f :stop-maj-min}
-                                       (gen/sleep (rnd-sleep))
+                                       (gen/sleep 3)
 
-                                       (gen/sleep (rnd-sleep))
+                                       (gen/sleep 2)
                                        {:type :info, :f :start-isolated}
-                                       (gen/sleep (rnd-duration))
+                                       (gen/sleep 4)
                                        {:type :info, :f :stop-isolated}
-                                       (gen/sleep (rnd-sleep)))))
+                                       (gen/sleep 2)
 
-                        (gen/time-limit (or (:time-limit opts) 60)))
+                                       (gen/sleep 2)
+                                       {:type :info, :f :start-dc2dc-net-fail}
+                                       (gen/sleep 2)
+                                       {:type :info, :f :stop-dc2dc-net-fail}
+                                       (gen/sleep 1))))
+                        (gen/time-limit (:time-limit opts)))
 
                        (gen/nemesis {:type :info, :f :stop-maj-min})
                        (gen/nemesis {:type :info, :f :stop-isolated})
-                       (gen/log "Let database quiesce...")
-                       (gen/sleep 5)
+                       ;; TODO: (gen/nemesis {:type :info, :f :stop-dc2dc-net-fail})
 
+                       (gen/log "Let database quiesce...")
+                       (gen/nemesis {:type :info, :f :start-quiesce})
+                       (gen/sleep 5)
+                       (gen/nemesis {:type :info, :f :stop-quiesce})
+
+                       (gen/log "Final read...")
+                       (gen/sleep 1)
+                       (gen/nemesis {:type :info, :f :final-read})
                        (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
           :checker   (checker/compose
                       {:perf       (checker/perf {:nemeses #{{:name "partition"
                                                               :start #{:start-maj-min}
                                                               :stop  #{:stop-maj-min}
-                                                              :color "#E9DCA0"}
+                                                              :color "#E31635"}
                                                              {:name "isolated dc"
                                                               :start #{:start-isolated}
                                                               :stop  #{:stop-isolated}
-                                                              :color "#E9A4A0"}}})
+                                                              :color "#F5891A"}
+                                                             {:name "dc2dc net fail"
+                                                              :start #{:start-dc2dc-net-fail}
+                                                              :stop  #{:stop-dc2dc-net-fail}
+                                                              :color "#FADB06"}
+                                                             {:name "quiesce"
+                                                              :start #{:start-quiesce}
+                                                              :stop  #{:stop-quiesce}
+                                                              :color "#2C7AC5"}
+                                                             {:name "final read"
+                                                              :fs #{:final-read}
+                                                              :color "#017862"}}})
                        :set-full   (checker/set-full)
                        :timeline   (timeline/html)
                        :exceptions (checker/unhandled-exceptions)
                        :stats      (checker/stats)})}))
+(def cli-opts
+  "Additional command line options."
+  [["-r" "--rate HZ" "Approximate number of requests per second, per thread."
+    :default  10
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]])
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
                 browsing results."
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn fuzz-dist-test})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn  fuzz-dist-test
+                                         :opt-spec cli-opts})
                    (cli/serve-cmd))
             args))
