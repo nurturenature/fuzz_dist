@@ -52,7 +52,8 @@
                "fail" (assoc op :type :fail, :error (:error resp))))
       :read (let [resp (ws-invoke conn :g_set :read op)]
               (case (:type resp)
-                "ok"   (assoc op :type :ok,   :value (:value resp))
+                ;; sort returned set for human readability, json unorders
+                "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
                 "fail" (assoc op :type :fail, :error (:error resp))))))
 
   (teardown! [this test])
@@ -66,25 +67,7 @@
   {:client  (GSetClient. nil)
    :nemesis (nemesis/full-nemesis opts)
    :checker (checker/compose
-             {:perf (checker/perf {:nemeses #{{:name "partition"
-                                               :start #{:start-maj-min}
-                                               :stop  #{:stop-maj-min}
-                                               :color "#E31635"}
-                                              {:name "isolated dc"
-                                               :start #{:start-isolated}
-                                               :stop  #{:stop-isolated}
-                                               :color "#F5891A"}
-                                              {:name "dc2dc net fail"
-                                               :start #{:start-dc2dc-net-fail}
-                                               :stop  #{:stop-dc2dc-net-fail}
-                                               :color "#FADB06"}
-                                              {:name "quiesce"
-                                               :start #{:start-quiesce}
-                                               :stop  #{:stop-quiesce}
-                                               :color "#2C7AC5"}
-                                              {:name "final read"
-                                               :fs #{:final-read}
-                                               :color "#017862"}}})
+             {:perf       (checker/perf (nemesis/full-perf))
               :set-full   (checker/set-full)
               :timeline   (timeline/html)
               :exceptions (checker/unhandled-exceptions)
@@ -101,22 +84,31 @@
                                 {:type :info, :f :stop-maj-min}
                                 (gen/sleep (:nemesis-quiet opts))
 
+                                ;; (gen/sleep (:nemesis-quiet opts))
+                                ;; {:type :info, :f :start-maj-ring}
+                                ;; (gen/sleep (:nemesis-duration opts))
+                                ;;   {:type :info, :f :stop-maj-ring}
+                                ;; (gen/sleep (:nemesis-quiet opts))
+
                                 (gen/sleep (:nemesis-quiet opts))
                                 {:type :info, :f :start-isolated}
                                 (gen/sleep (:nemesis-duration opts))
                                 {:type :info, :f :stop-isolated}
                                 (gen/sleep (:nemesis-quiet opts))
 
-                                (gen/sleep (:nemesis-quiet opts))
-                                {:type :info, :f :start-dc2dc-net-fail}
-                                (gen/sleep (:nemesis-duration opts))
-                                {:type :info, :f :stop-dc2dc-net-fail}
-                                (gen/sleep (:nemesis-quiet opts)))))
+                                ;; TODO: net/drop! not working
+                                ;; (gen/sleep (:nemesis-quiet opts))
+                                ;; {:type :info, :f :start-dc2dc-net-fail}
+                                ;; (gen/sleep (:nemesis-duration opts))
+                                ;; {:type :info, :f :stop-dc2dc-net-fail}
+                                ;; (gen/sleep (:nemesis-quiet opts))
+                                )))
                  (gen/time-limit (:time-limit opts)))
 
                 (gen/nemesis {:type :info, :f :stop-maj-min})
+                ;; (gen/nemesis {:type :info, :f :stop-maj-ring})
                 (gen/nemesis {:type :info, :f :stop-isolated})
-                (gen/nemesis {:type :info, :f :stop-dc2dc-net-fail})
+                ;; (gen/nemesis {:type :info, :f :stop-dc2dc-net-fail})
 
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})
