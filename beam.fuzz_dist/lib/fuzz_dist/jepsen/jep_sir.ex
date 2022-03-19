@@ -57,7 +57,8 @@ defmodule FuzzDist.Jepsen.JepSir do
 
           {:ok, value} = Jepsen.Antidote.g_set_read(antidote_conn)
 
-          Telemetry.stop(:g_set_read, start_time, %{value: value})
+          # sort for human readability, json unorders
+          Telemetry.stop(:g_set_read, start_time, %{value: Enum.sort(value)})
 
           %{type: :ok, value: value}
 
