@@ -84,3 +84,11 @@
       {"/root/fuzz_dist/tmp/log"    "fuzz_dist_log"
        "/root/antidote/logger_logs" "antidote_logger_logs"
        "/root/antidote/log"         "antidote_log"})))
+
+(defn start!
+  [test node]
+  :not-implemented)
+
+(defn stop!
+  [test node]
+  :not-implemented)
