@@ -1,6 +1,6 @@
 # fuzz_dist
 
-A framework for and customization of Jepsen for BEAM applications.
+A framework and customization of Jepsen for BEAM applications.
 
 Generative property testing of...
 
@@ -22,8 +22,8 @@ Using Jepsen meaningfully, like all dist-sys endeavors, is a meaningful commitme
 `fuzz_dist` is an effort to bring Jepsen and BEAM applications together in a more approachable way.
 
 - generic'ish Elixir client
-  - test operations as Elixir `@behavior`s vs Clojure `(fn )`
-  - classic user connects via websocket to nearest local node which is geo clustered architecture 
+  - test operations as Elixir `@behavior`s vs Clojure `(fn [])`
+  - common user connects via websocket to nearest local node which is geo clustered architecture 
 - build/test/run environment pre-configured for BEAM
 - more efficient/effective fault injection
 
@@ -42,13 +42,12 @@ Is the application's implementation standing firmly on and aligned with the BEAM
 `fuzz_dist` directs Jepsen's `nemesis` generators to fuzz at distributed Erlang boundary values, triggers.
 
 Fuzz near
-- partition duration ~ `NetTickTime`
-  - -> `:nodedown`, `:nodeup`
+- partition duration ~ `NetTick(Time/Intensity)/HeartBeat`
 - network faults ~ `GenServer.call(:timeout)`
-  - -> `{:error, :timeout}`
+- `:nodedown/up`, `{:error, :timeout}`
 - ...
 
-The BEAM was built to be observed. Add these observations during fault injection to the application's OpenTelemetry. Link anomalies to metrics/spans/logs of both the application and the BEAM.
+The BEAM was built to be observed. Combine these observations with Jepsen fault and application telemetry to directly link anomalies to metrics/spans/logs.
 
 - `erlang:monitor(:nodes, :time/clock_services, ...)`
 - Jepsen operations,injected faults ->
@@ -63,28 +62,31 @@ The BEAM was built to be observed. Add these observations during fault injection
 > 
 > -- <cite>Leslie Lamport</cite>
 
-The current state of `fuzz_dist` is very much at the
-```elixir
-:hello
-  |> world("!")
-```
-stage. The simple tests and configurations are helping to develop and evaluate the idea of a more approachable Jepsen testing of BEAM applications.
+### Current AntidoteDB test:
 
-Current AntidoteDB test shows:
-- setup/teardown
+- DB
   - build/install
   - configure cluster (5 * dc1n1)
   - capture logs
+  
 - client
   - Elixir `@behavior` using Erlang client API
   - `static:` transactions
+  
 - operations generator
-  - random mix of adds/reads across cluster
+  - random mix of add or read
+
+
 - nemesis (fault injection)
-  - majority/minority partition, random membership
+  - partitions
+    - majority/minority
+    - majorities ring
+    - bridge
   - isolate an individual data center
+
 - model/checker
-  - grow-set
+  - grow-set (Jepsen's internal `(set-full)`)
+
 - basic stats/analysis
 
 ---
@@ -92,25 +94,44 @@ Current AntidoteDB test shows:
 ## .next()
 
 ### Tests
-- make workflows generative, config property vaues/ranges
+- new types of faults
+- more generative workflows
 - improve analysis reports
 
 
 ### Client
 - add `:interactive` transactions
-  - and ability to abort
+  - ability to abort
 - more comprehensive Telemetry
 
 ### Environment
-- more erogonmic
+- more ergonomic
 - easier to package/deploy
 
 ---
 
 ## Jepsen Tests Are Living Tests
 
+Fuzzing distributed systems productively, i.e. actually improving documentation/code, increasing understanding/confidence, in a sustainable way is both an art and a science.
 
-Many thanks to @aphyr and https://jepsen.io for https://github.com/jepsen-io/jepsen.
+The Jepsen community has lead the way in showing us how to do it effectively, ethically, and in a way that's truly fun.
+
+Many thanks to @Aphyr and https://jepsen.io for https://github.com/jepsen-io/jepsen.
+
 
 ---
 
+## Usage
+
+`fuzz_dist` is designed to run in the same default environment that Jepsen
+core develops/tests with: https://github.com/jepsen-io/jepsen#lxc
+
+
+```bash
+cd jepsen.fuzz_dist
+lein run test --workload demo
+
+# has webserver to interact with test results
+# http://localhost:8080
+lein run serve
+```
