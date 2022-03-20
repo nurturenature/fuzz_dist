@@ -84,17 +84,33 @@
                                 {:type :info, :f :stop-maj-min}
                                 (gen/sleep (:nemesis-quiet opts))
 
-                                ;; (gen/sleep (:nemesis-quiet opts))
-                                ;; {:type :info, :f :start-maj-ring}
-                                ;; (gen/sleep (:nemesis-duration opts))
-                                ;;   {:type :info, :f :stop-maj-ring}
-                                ;; (gen/sleep (:nemesis-quiet opts))
+                                (gen/sleep (:nemesis-quiet opts))
+                                {:type :info, :f :start-maj-ring}
+                                (gen/sleep (:nemesis-duration opts))
+                                {:type :info, :f :stop-maj-ring}
+                                (gen/sleep (:nemesis-quiet opts))
+
+                                (gen/sleep (:nemesis-quiet opts))
+                                {:type :info, :f :start-bridge}
+                                (gen/sleep (:nemesis-duration opts))
+                                {:type :info, :f :stop-bridge}
+                                (gen/sleep (:nemesis-quiet opts))
 
                                 (gen/sleep (:nemesis-quiet opts))
                                 {:type :info, :f :start-isolated}
                                 (gen/sleep (:nemesis-duration opts))
                                 {:type :info, :f :stop-isolated}
                                 (gen/sleep (:nemesis-quiet opts))
+
+                              ;; TODO: in progress
+                                ;; ;; extra sleep for node to stop/start
+                                ;; (gen/sleep (:nemesis-quiet opts))
+                                ;; {:type :info, :f :start-restart}
+                                ;; (gen/sleep (:nemesis-duration opts))
+                                ;; (gen/sleep (:nemesis-quiet opts))
+                                ;; {:type :info, :f :stop-restart}
+                                ;; (gen/sleep (:nemesis-duration opts))
+                                ;; (gen/sleep (:nemesis-quiet opts))
 
                                 ;; TODO: net/drop! not working
                                 ;; (gen/sleep (:nemesis-quiet opts))
@@ -106,10 +122,11 @@
                  (gen/time-limit (:time-limit opts)))
 
                 (gen/nemesis {:type :info, :f :stop-maj-min})
-                ;; (gen/nemesis {:type :info, :f :stop-maj-ring})
+                (gen/nemesis {:type :info, :f :stop-maj-ring})
+                (gen/nemesis {:type :info, :f :stop-bridge})
                 (gen/nemesis {:type :info, :f :stop-isolated})
                 ;; (gen/nemesis {:type :info, :f :stop-dc2dc-net-fail})
-
+                ;; TODO: :stop-restart state?
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})
                 (gen/sleep 5)
