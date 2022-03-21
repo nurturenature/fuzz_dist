@@ -61,13 +61,31 @@
   (close! [_ test]
     (s/close! conn)))
 
+(defn gen-rand-nemesis
+  [opts]
+  (let [nemesis       ((rand-nth nemesis/all-nemeses) opts)
+        nemesis-quiet (+ (:nemesis-quiet-min opts)
+                         (rand-int (+ (- (:nemesis-quiet-max opts)
+                                         (:nemesis-quiet-min opts))
+                                      1)))
+        nemesis-duration (+ (:nemesis-duration-min opts)
+                            (rand-int (+ (- (:nemesis-duration-max opts)
+                                            (:nemesis-duration-min opts))
+                                         1)))]
+    (gen/phases
+     (gen/sleep nemesis-quiet)
+     {:type :info, :f (:start nemesis)}
+     (gen/sleep nemesis-duration)
+     {:type :info, :f (:stop nemesis)}
+     (gen/sleep nemesis-quiet))))
+
 (defn demo-workload
   "A generator, client, and checker for a set test."
   [opts]
   {:client  (GSetClient. nil)
    :nemesis (nemesis/full-nemesis opts)
    :checker (checker/compose
-             {:perf       (checker/perf (nemesis/full-perf))
+             {:perf       (checker/perf (nemesis/full-perf opts))
               :set-full   (checker/set-full)
               :timeline   (timeline/html)
               :exceptions (checker/unhandled-exceptions)
@@ -77,56 +95,15 @@
                  (gen/mix [g-set-read g-set-add])
                  (gen/stagger (/ (:rate opts)))
                  (gen/nemesis (gen/cycle
-                               (gen/phases
-                                (gen/sleep (:nemesis-quiet opts))
-                                {:type :info, :f :start-maj-min}
-                                (gen/sleep (:nemesis-duration opts))
-                                {:type :info, :f :stop-maj-min}
-                                (gen/sleep (:nemesis-quiet opts))
-
-                                (gen/sleep (:nemesis-quiet opts))
-                                {:type :info, :f :start-maj-ring}
-                                (gen/sleep (:nemesis-duration opts))
-                                {:type :info, :f :stop-maj-ring}
-                                (gen/sleep (:nemesis-quiet opts))
-
-                                (gen/sleep (:nemesis-quiet opts))
-                                {:type :info, :f :start-bridge}
-                                (gen/sleep (:nemesis-duration opts))
-                                {:type :info, :f :stop-bridge}
-                                (gen/sleep (:nemesis-quiet opts))
-
-                                (gen/sleep (:nemesis-quiet opts))
-                                {:type :info, :f :start-isolated}
-                                (gen/sleep (:nemesis-duration opts))
-                                {:type :info, :f :stop-isolated}
-                                (gen/sleep (:nemesis-quiet opts))
-
-                              ;; TODO: in progress
-                                ;; ;; extra sleep for node to stop/start
-                                ;; (gen/sleep (:nemesis-quiet opts))
-                                ;; {:type :info, :f :start-restart}
-                                ;; (gen/sleep (:nemesis-duration opts))
-                                ;; (gen/sleep (:nemesis-quiet opts))
-                                ;; {:type :info, :f :stop-restart}
-                                ;; (gen/sleep (:nemesis-duration opts))
-                                ;; (gen/sleep (:nemesis-quiet opts))
-
-                                ;; TODO: net/drop! not working
-                                ;; (gen/sleep (:nemesis-quiet opts))
-                                ;; {:type :info, :f :start-dc2dc-net-fail}
-                                ;; (gen/sleep (:nemesis-duration opts))
-                                ;; {:type :info, :f :stop-dc2dc-net-fail}
-                                ;; (gen/sleep (:nemesis-quiet opts))
-                                )))
+                               (fn [] (gen-rand-nemesis opts))))
                  (gen/time-limit (:time-limit opts)))
 
-                (gen/nemesis {:type :info, :f :stop-maj-min})
-                (gen/nemesis {:type :info, :f :stop-maj-ring})
-                (gen/nemesis {:type :info, :f :stop-bridge})
-                (gen/nemesis {:type :info, :f :stop-isolated})
-                ;; (gen/nemesis {:type :info, :f :stop-dc2dc-net-fail})
-                ;; TODO: :stop-restart state?
+                ;; TODO :final-generator pattern, e.g. Maelstrom
+                (map (fn [nem]
+                       (let [nemesis (nem opts)]
+                         (gen/nemesis {:type :info, :f (:stop nemesis)})))
+                     nemesis/all-nemeses)
+
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})
                 (gen/sleep 5)
@@ -134,10 +111,9 @@
 
                 (gen/log "Final read...")
                 (gen/sleep 1)
-                (gen/nemesis {:type :info, :f :final-read})
-                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
-   ;; TODO real generic final
-   :final-generator (gen/once {:type :invoke, :f :read, :value nil})})
+                (gen/nemesis {:type :info, :f :start-final-read})
+                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
+                (gen/nemesis {:type :info, :f :stop-final-read}))})
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
@@ -164,11 +140,19 @@
   [["-w" "--workload NAME" "What workload should we run?"
     :missing  (str "--workload " (cli/one-of workloads))
     :validate [workloads (cli/one-of workloads)]]
-   [nil "--nemesis-quiet QT" "Quiet time both before and after nemesis activity."
+   [nil "--nemesis-quiet-min QT" "Minimum quiet time both before and after nemesis activity."
+    :default  1
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--nemesis-quiet-max QT" "Maximum quiet time both before and after nemesis activity."
     :default  2
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-   [nil "--nemesis-duration DT" "Duration time of nemesis activity."
+   [nil "--nemesis-duration-min DT" "Minimum duration time of nemesis activity."
+    :default  4
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--nemesis-duration-max DT" "Maximum duration time of nemesis activity."
     :default  5
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
