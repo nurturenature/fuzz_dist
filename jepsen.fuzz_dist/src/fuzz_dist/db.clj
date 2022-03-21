@@ -85,10 +85,12 @@
        "/root/antidote/logger_logs" "antidote_logger_logs"
        "/root/antidote/log"         "antidote_log"})))
 
+;; TODO node stopper/starter
 (defn start!
   [test node]
   :not-implemented)
 
+;; TODO node stopper/starter
 (defn stop!
   [test node]
   :not-implemented)
