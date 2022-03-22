@@ -153,7 +153,7 @@
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--nemesis-duration-max DT" "Maximum duration time of nemesis activity."
-    :default  5
+    :default  4
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."

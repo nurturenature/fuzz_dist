@@ -96,7 +96,7 @@
      :msgs  {gen-start :start
              gen-stop  :stop}
      :f     (nemesis/partition-random-node)
-     :perf  {:name "isolated dc"
+     :perf  {:name "isolated 1 dc"
              :start #{gen-start}
              :stop  #{gen-stop}
              :color coral}}))
@@ -109,8 +109,13 @@
      :stop  gen-stop
      :msgs  {gen-start :start
              gen-stop  :stop}
-     :f     (nemesis/partitioner (nemesis/complete-grudge [(:nodes opts) (:nodes opts)]))
-     :perf  {:name "all isolated"
+     :f     (nemesis/partitioner (fn grudge [nodes]
+                                   (nemesis/complete-grudge
+                                    (reduce (fn [acc node] (conj acc #{node}))
+                                            #{}
+                                            nodes))))
+
+     :perf  {:name "isolated all dcs"
              :start #{gen-start}
              :stop  #{gen-stop}
              :color tomato}}))
