@@ -126,7 +126,7 @@
   (let [workload ((get workloads (:workload opts)) opts)]
     (merge tests/noop-test
            opts
-           {:name       (str "fuzz-dist - Antidote - " (count (:nodes opts)) "-x-dc1n1 - g-set")
+           {:name       (str "fuzz-dist - AntidoteDB - " (count (:nodes opts)) "-x-dc1n1 - g-set")
             :os         debian/os
             :db         (db/db :git)
             :client     (:client workload)
