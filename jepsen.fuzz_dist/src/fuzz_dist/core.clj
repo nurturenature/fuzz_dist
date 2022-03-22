@@ -141,7 +141,7 @@
     :missing  (str "--workload " (cli/one-of workloads))
     :validate [workloads (cli/one-of workloads)]]
    [nil "--nemesis-quiet-min QT" "Minimum quiet time both before and after nemesis activity."
-    :default  1
+    :default  2
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--nemesis-quiet-max QT" "Maximum quiet time both before and after nemesis activity."
@@ -149,11 +149,11 @@
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--nemesis-duration-min DT" "Minimum duration time of nemesis activity."
-    :default  4
+    :default  3
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--nemesis-duration-max DT" "Maximum duration time of nemesis activity."
-    :default  5
+    :default  4
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
