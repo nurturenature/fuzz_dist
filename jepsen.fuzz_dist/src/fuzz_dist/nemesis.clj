@@ -1,7 +1,9 @@
 (ns fuzz-dist.nemesis
   (:require
+   [clojure.set :as set]
    [fuzz-dist.db :as db]
    [jepsen.nemesis :as nemesis]
+   [jepsen.nemesis.combined :as nc]
    [jepsen.net :as net]))
 
 ;; reds
@@ -148,14 +150,16 @@
              :stop  #{gen-stop}
              :color mediumseagreen}}))
 
-(def all-nemeses [partition-maj-min,
-                  partition-maj-ring,
-                  partition-bridge,
-                  isolated-dc,
-                  isolated-all])
+(def all-nemeses
+  #{partition-maj-min
+    partition-maj-ring
+    partition-bridge
+    isolated-dc
+    isolated-all})
 
-(def all-noops [noop-quiesce,
-                noop-final-read])
+(def all-noops
+  #{noop-quiesce
+    noop-final-read})
 
 (defn full-nemesis
   "Merges together all nemeses and noops"
@@ -166,13 +170,31 @@
                                       (:msgs nem) (:f nem))))
 
            {}
-           (into [] (concat all-nemeses all-noops)))))
+           (set/union all-nemeses all-noops))))
+
+(defn some-nemesis
+  "Merges together given nemeses and all noops"
+  [nemeses opts]
+  (nemesis/compose
+   (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
+                               (assoc acc
+                                      (:msgs nem) (:f nem))))
+
+           {}
+           (set/union nemeses all-noops))))
 
 (defn full-perf
-  "Merges together all perfs"
+  "Merges together all perfs into a set"
   [opts]
-  {:nemeses (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
-                                        (conj acc
-                                              (:perf nem))))
-                    #{}
-                    (into [] (concat all-nemeses all-noops)))})
+  (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
+                              (conj acc
+                                    (:perf nem))))
+          #{}
+          (set/union all-nemeses all-noops)))
+
+(defn g-set-nemesis-package
+  "A full nemesis package. Options are those for
+  jepsen.nemesis.combined/nemesis-package."
+  [opts]
+  (nc/compose-packages
+   [(nc/partition-package opts)]))
