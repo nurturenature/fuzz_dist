@@ -108,20 +108,27 @@
                         #{:none} #{}
                         (:faults opts))
         nemesis       ((nemesis/all-nemeses (rand-nth (seq nemeses))) opts)
-        nemesis-quiet (+ (:fault-quiet-min opts)
-                         (rand-int (+ (- (:fault-quiet-max opts)
-                                         (:fault-quiet-min opts))
-                                      1)))
-        nemesis-duration (+ (:fault-duration-min opts)
-                            (rand-int (+ (- (:fault-duration-max opts)
-                                            (:fault-duration-min opts))
-                                         1)))]
+        [[pre-min, pre-max]
+         [dur-min, dur-max]
+         [post-min, post-max]] (:faults-times opts)
+        nemesis-pre-quiet  (+ pre-min
+                              (rand-int (+ (- pre-max
+                                              pre-min)
+                                           1)))
+        nemesis-duration   (+ dur-min
+                              (rand-int (+ (- dur-max
+                                              dur-min)
+                                           1)))
+        nemesis-post-quiet (+ post-min
+                              (rand-int (+ (- post-max
+                                              post-min)
+                                           1)))]
     (gen/phases
-     (gen/sleep nemesis-quiet)
+     (gen/sleep nemesis-pre-quiet)
      {:type :info, :f (:start nemesis)}
      (gen/sleep nemesis-duration)
      {:type :info, :f (:stop nemesis)}
-     (gen/sleep nemesis-quiet))))
+     (gen/sleep nemesis-post-quiet))))
 
 (defn g-set-compose
   "Construct a
@@ -175,7 +182,11 @@
     (merge tests/noop-test
            opts
            workload
-           {:name       (str "fuzz-dist - AntidoteDB - " (count (:nodes opts)) "-x-dc1n1 - " workload-name)
+           {:name       (str "fuzz-dist-AntidoteDB"
+                             "-" (count (:nodes opts)) "-dc"
+                             "-" (seq (:faults opts)) "@" (:faults-times opts)
+                             "-" (:rate opts) "s"
+                             "-" workload-name)
             :nodes      (:nodes opts)
             :os         debian/os
             :db         db
@@ -223,40 +234,46 @@
                 (->> (str/split string #"\s*,\s*")
                      (map keyword)
                      set))
-    ;; TODO, currently a set of fn
-    :validate [(partial every? (set (keys nemesis/all-nemeses))) (cli/one-of (set (keys nemesis/all-nemeses)))]]
+    :validate [(partial every? nemesis/all-nemeses) (cli/one-of nemesis/all-nemeses)]]
 
-   [nil "--fault-quiet-min QT" "Minimum quiet time both before and after a fault."
-    :default  1
+   [nil "--faults-times [[T,T] [T,T] [T,T]" "[Minimum, Maximum] of [Pre-quiet, Duration, Post-quiet] times."
+    :default  [[1,1] [5,5] [1,1]]
     :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-
-   [nil "--fault-quiet-max QT" "Maximum quiet time both before and after a fault."
-    :default  2
-    :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-
-   [nil "--fault-duration-min DT" "Minimum duration time of a fault."
-    :default  3
-    :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-
-   [nil "--fault-duration-max DT" "Maximum duration time of a fault."
-    :default  5
-    :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+    ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]
+    ]
 
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
     :default  10
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]])
 
+(defn opt-fn
+  "Post-processes the parsed CLI options structure."
+  [parsed]
+  (if (= #{:all} (:faults parsed))
+    (assoc parsed :faults (set (keys nemesis/all-nemeses)))
+    parsed))
+
+(defn all-tests
+  "Takes parsed CLI options and constructs a sequence of test options, by
+  combining all workloads and faults."
+  [opts]
+  (let [faults      (:faults opts)
+        workloads   [(:workload opts)]
+        counts      (range (:test-count opts))]
+    (->> (for [i counts, f faults, w workloads]
+           (assoc opts :fault f :workload w))
+         (map fuzz-dist-test))))
+
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
                 browsing results."
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn  fuzz-dist-test
-                                         :opt-spec (concat test-opt-spec
-                                                           opt-spec)})
+                                         :opt-spec (concat test-opt-spec opt-spec)
+                                         :opt-fn   opt-fn})
+                   (cli/test-all-cmd    {:tests-fn all-tests
+                                         :opt-spec (concat test-opt-spec opt-spec)
+                                         :opt-fn   opt-fn})
                    (cli/serve-cmd))
             args))
