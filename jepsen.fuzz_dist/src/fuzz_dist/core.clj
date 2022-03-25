@@ -103,7 +103,11 @@
 
 (defn gen-rand-nemesis
   [opts]
-  (let [nemesis       ((rand-nth (seq nemesis/all-nemeses)) opts)
+  (let [nemeses       (case (:faults opts)
+                        #{:all} (set (keys nemesis/all-nemeses))
+                        #{:none} #{}
+                        (:faults opts))
+        nemesis       ((nemesis/all-nemeses (rand-nth (seq nemeses))) opts)
         nemesis-quiet (+ (:fault-quiet-min opts)
                          (rand-int (+ (- (:fault-quiet-max opts)
                                          (:fault-quiet-min opts))
@@ -137,7 +141,7 @@
                      (gen/time-limit (:time-limit opts)))
 
                 ;; TODO :final-generator pattern
-                (map (fn [nem]
+                (map (fn [[_ nem]]
                        (let [nemesis (nem opts)]
                          (gen/nemesis {:type :info, :f (:stop nemesis)})))
                      nemesis/all-nemeses)
@@ -164,7 +168,7 @@
   (let [db            (db/db :git)
         workload-name (:workload opts)
         workload      ((workloads workload-name) opts)
-        package       (if-let [nemesis (:nemesis opts)]
+        package       (if (:nemesis opts)
                         (g-set-package db workload opts)
                         (g-set-compose db workload opts))]
 
@@ -220,8 +224,7 @@
                      (map keyword)
                      set))
     ;; TODO, currently a set of fn
-    ;; :validate [(partial every? nemesis/all-nemeses) (cli/one-of nemesis/all-nemeses)]
-    ]
+    :validate [(partial every? (set (keys nemesis/all-nemeses))) (cli/one-of (set (keys nemesis/all-nemeses)))]]
 
    [nil "--fault-quiet-min QT" "Minimum quiet time both before and after a fault."
     :default  1
