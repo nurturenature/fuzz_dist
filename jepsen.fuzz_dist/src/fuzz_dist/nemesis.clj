@@ -151,46 +151,46 @@
              :color mediumseagreen}}))
 
 (def all-nemeses
-  #{partition-maj-min
-    partition-maj-ring
-    partition-bridge
-    isolated-dc
-    isolated-all})
+  {:partition-maj-min  partition-maj-min
+   :partition-maj-ring partition-maj-ring
+   :partition-bridge   partition-bridge
+   :isolated-dc        isolated-dc
+   :isolated-all       isolated-all})
 
 (def all-noops
-  #{noop-quiesce
-    noop-final-read})
+  {:noop-quiesce    noop-quiesce
+   :noop-final-read noop-final-read})
 
 (defn full-nemesis
-  "Merges together all nemeses and noops"
+  "Merges together all nemeses and noops to a singled composed nemesis."
   [opts]
   (nemesis/compose
-   (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
-                               (assoc acc
-                                      (:msgs nem) (:f nem))))
+   (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
+                                   (assoc acc
+                                          (:msgs nem) (:f nem))))
 
            {}
-           (set/union all-nemeses all-noops))))
+           (merge all-nemeses all-noops))))
 
 (defn some-nemesis
-  "Merges together given nemeses and all noops"
+  "Merges together given nemeses and all noops to a singled composed nemesis."
   [nemeses opts]
   (nemesis/compose
-   (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
-                               (assoc acc
-                                      (:msgs nem) (:f nem))))
+   (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
+                                   (assoc acc
+                                          (:msgs nem) (:f nem))))
 
            {}
-           (set/union nemeses all-noops))))
+           (merge (select-keys all-nemeses nemeses) all-noops))))
 
 (defn full-perf
-  "Merges together all perfs into a set"
+  "Merges together all perfs into a set."
   [opts]
-  (reduce (fn [acc nemesis] (let [nem (nemesis opts)]
-                              (conj acc
-                                    (:perf nem))))
+  (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
+                                  (conj acc
+                                        (:perf nem))))
           #{}
-          (set/union all-nemeses all-noops)))
+          (merge all-nemeses all-noops)))
 
 (defn g-set-nemesis-package
   "A full nemesis package. Options are those for
