@@ -185,6 +185,7 @@
            {:name       (str "fuzz-dist-AntidoteDB"
                              "-" (count (:nodes opts)) "-dc"
                              "-" (seq (:faults opts)) "@" (:faults-times opts)
+                             "-" (:time-limit opts) "s"
                              "-" (:rate opts) "s"
                              "-" workload-name)
             :nodes      (:nodes opts)
@@ -256,13 +257,22 @@
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of test options, by
-  combining all workloads and faults."
+  combining all workloads, faults, and fault duration range ."
   [opts]
-  (let [faults      (:faults opts)
-        workloads   [(:workload opts)]
-        counts      (range (:test-count opts))]
-    (->> (for [i counts, f faults, w workloads]
-           (assoc opts :fault f :workload w))
+  (let [faults                (:faults opts)
+        [[pre-min,pre-max]
+         [dur-min,dur-max]
+         [post-min,post-max]] (:faults-times opts)
+        durations             (range dur-min (+ dur-max 1))
+        workloads             [(:workload opts)]
+        counts                (range (:test-count opts))]
+    (->> (for [i counts, w workloads, f faults, d durations]
+           (assoc opts
+                  :workload w
+                  :faults #{f}
+                  :faults-times [[pre-min,pre-max]
+                                 [d,d]
+                                 [post-min,post-max]]))
          (map fuzz-dist-test))))
 
 (defn -main
