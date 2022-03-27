@@ -83,9 +83,8 @@
                                                         :interval (:nemesis-interval opts)
                                                         :faults   (:nemesis opts)
                                                         :partition {:targets [:one :minority-third :majority :majorities-ring]}})
-        generator       (->> (if (pos? (:rate opts))
-                               (gen/stagger (/ (:rate opts)) (:generator workload))
-                               (gen/sleep (:time-limit opts)))
+        generator       (->> (:generator workload)
+                             (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
                              (gen/nemesis (:generator nemesis-package))
                              (gen/time-limit (:time-limit opts)))
         ; If this workload has a final generator, end the nemesis, wait for
@@ -108,27 +107,15 @@
                         #{:none} #{}
                         (:faults opts))
         nemesis       ((nemesis/all-nemeses (rand-nth (seq nemeses))) opts)
-        [[pre-min, pre-max]
-         [dur-min, dur-max]
-         [post-min, post-max]] (:faults-times opts)
-        nemesis-pre-quiet  (+ pre-min
-                              (rand-int (+ (- pre-max
-                                              pre-min)
-                                           1)))
-        nemesis-duration   (+ dur-min
-                              (rand-int (+ (- dur-max
-                                              dur-min)
-                                           1)))
-        nemesis-post-quiet (+ post-min
-                              (rand-int (+ (- post-max
-                                              post-min)
-                                           1)))]
+        [[pre-range]
+         [dur-range]
+         [post-range]] (:faults-times opts)
     (gen/phases
-     (gen/sleep nemesis-pre-quiet)
+     (gen/sleep (util/rand-int-from-range pre-range))
      {:type :info, :f (:start nemesis)}
-     (gen/sleep nemesis-duration)
+     (gen/sleep (util/rand-int-from-range dur-range))
      {:type :info, :f (:stop nemesis)}
-     (gen/sleep nemesis-post-quiet))))
+     (gen/sleep (util/rand-int-from-range post-range)))))
 
 (defn g-set-compose
   "Construct a
@@ -140,9 +127,8 @@
   {:nemesis (nemesis/full-nemesis opts)
    :perf    (nemesis/full-perf opts)
    :generator  (gen/phases
-                (->> (if (pos? (:rate opts))
-                       (gen/stagger (/ (:rate opts)) (:generator workload))
-                       (gen/sleep (:time-limit opts)))
+                (->> (:generator workload)
+                     (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
                      (gen/nemesis (gen/cycle
                                    (fn [] (gen-rand-nemesis opts))))
                      (gen/time-limit (:time-limit opts)))
@@ -182,11 +168,12 @@
     (merge tests/noop-test
            opts
            workload
-           {:name       (str "fuzz-dist-AntidoteDB"
-                             "-" (count (:nodes opts)) "-dc"
+           {:name       (str "fuzz-dist"
+                             "-Antidote"
+                             "-" (count (:nodes opts)) "xdc"
                              "-" (seq (:faults opts)) "@" (:faults-times opts)
-                             "-" (:time-limit opts) "s"
-                             "-" (:rate opts) "s"
+                             "-for-" (:time-limit opts) "s"
+                             "-@" (:rate opts) "ts"
                              "-" workload-name)
             :nodes      (:nodes opts)
             :os         debian/os
@@ -243,10 +230,11 @@
     ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]
     ]
 
-   ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
-    :default  10
+   ["-r" "--rate [HZ,HZ]" "Range of approximate number of requests per second, per thread."
+    :default  [10,10]
     :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]])
+    ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+    ]])
 
 (defn opt-fn
   "Post-processes the parsed CLI options structure."
@@ -264,15 +252,18 @@
          [dur-min,dur-max]
          [post-min,post-max]] (:faults-times opts)
         durations             (range dur-min (+ dur-max 1))
+        [rate-min,rate-max]   (:rate opts)
+        rates                 (range rate-min (+ rate-max 1))
         workloads             [(:workload opts)]
         counts                (range (:test-count opts))]
-    (->> (for [i counts, w workloads, f faults, d durations]
+    (->> (for [i counts, w workloads, f faults, d durations, r rates]
            (assoc opts
                   :workload w
                   :faults #{f}
                   :faults-times [[pre-min,pre-max]
                                  [d,d]
-                                 [post-min,post-max]]))
+                                 [post-min,post-max]]
+                  :rate [r,r]))
          (map fuzz-dist-test))))
 
 (defn -main
