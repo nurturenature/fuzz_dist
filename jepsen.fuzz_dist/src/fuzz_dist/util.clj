@@ -17,3 +17,11 @@
 (defn n-to-fqdn [node app] (let [[n num] node]
                              (str app "@" "192.168.122.10" num)))
 (defn nodes-to-fqdn [nodes app] (map #(n-to-fqdn % app) nodes))
+
+(defn rand-int-from-range
+  [[mi,ma]] (rand-int-from-range mi ma)
+  [mi ma]
+  (+ mi
+     (rand-int (+ (- ma
+                     mi)
+                  1))))
