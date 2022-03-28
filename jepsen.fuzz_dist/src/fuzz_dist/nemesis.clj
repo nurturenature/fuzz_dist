@@ -192,6 +192,15 @@
           #{}
           (merge all-nemeses all-noops)))
 
+(defn some-perf
+  "Merges together all given nemeses perfs and all noops into a set."
+  [nemeses opts]
+  (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
+                                  (conj acc
+                                        (:perf nem))))
+          #{}
+          (merge (select-keys all-nemeses nemeses) all-noops)))
+
 (defn g-set-nemesis-package
   "A full nemesis package. Options are those for
   jepsen.nemesis.combined/nemesis-package."

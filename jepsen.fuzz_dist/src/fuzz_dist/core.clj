@@ -84,7 +84,7 @@
                                                         :faults   (:nemesis opts)
                                                         :partition {:targets [:one :minority-third :majority :majorities-ring]}})
         generator       (->> (:generator workload)
-                             (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
+                             (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
                              (gen/nemesis (:generator nemesis-package))
                              (gen/time-limit (:time-limit opts)))
         ; If this workload has a final generator, end the nemesis, wait for
@@ -102,14 +102,11 @@
 
 (defn gen-rand-nemesis
   [opts]
-  (let [nemeses       (case (:faults opts)
-                        #{:all} (set (keys nemesis/all-nemeses))
-                        #{:none} #{}
-                        (:faults opts))
-        nemesis       ((nemesis/all-nemeses (rand-nth (seq nemeses))) opts)
-        [[pre-range]
-         [dur-range]
-         [post-range]] (:faults-times opts)
+  (let [nemesis      ((nemesis/all-nemeses
+                       (rand-nth (seq (:faults opts)))) opts)
+        [pre-range,
+         dur-range,
+         post-range] (:faults-times opts)]
     (gen/phases
      (gen/sleep (util/rand-int-from-range pre-range))
      {:type :info, :f (:start nemesis)}
@@ -128,7 +125,7 @@
    :perf    (nemesis/full-perf opts)
    :generator  (gen/phases
                 (->> (:generator workload)
-                     (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
+                     (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
                      (gen/nemesis (gen/cycle
                                    (fn [] (gen-rand-nemesis opts))))
                      (gen/time-limit (:time-limit opts)))
@@ -171,9 +168,11 @@
            {:name       (str "fuzz-dist"
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
-                             "-" (seq (:faults opts)) "@" (:faults-times opts)
+                             "-" (if (:nemesis opts)
+                                   (str (seq (:nemesis opts)) "-" (:nemesis-interval opts)                  "s")
+                                   (str (seq (:faults opts))  "-" (util/pprint-ranges (:faults-times opts)) "s"))
                              "-for-" (:time-limit opts) "s"
-                             "-@" (:rate opts) "ts"
+                             "-" (util/pprint-range (:rate opts)) "ts"
                              "-" workload-name)
             :nodes      (:nodes opts)
             :os         debian/os
@@ -236,12 +235,23 @@
     ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
     ]])
 
+(defn parse-faults
+  "Post-processes the parsed CLI options structure."
+  [parsed]
+  (let [options (:options parsed)
+        faults  (:faults options)]
+    (assoc parsed :options (-> options
+                               (assoc :faults (case faults
+                                                #{:all} (set (keys nemesis/all-nemeses))
+                                                #{:none} #{}
+                                                faults))))))
+
 (defn opt-fn
   "Post-processes the parsed CLI options structure."
   [parsed]
-  (if (= #{:all} (:faults parsed))
-    (assoc parsed :faults (set (keys nemesis/all-nemeses)))
-    parsed))
+  (-> parsed
+      parse-faults
+      cli/test-opt-fn))
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of test options, by
@@ -272,9 +282,9 @@
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn  fuzz-dist-test
                                          :opt-spec (concat test-opt-spec opt-spec)
-                                         :opt-fn   opt-fn})
+                                         :opt-fn*  opt-fn})
                    (cli/test-all-cmd    {:tests-fn all-tests
                                          :opt-spec (concat test-opt-spec opt-spec)
-                                         :opt-fn   opt-fn})
+                                         :opt-fn*  opt-fn})
                    (cli/serve-cmd))
             args))
