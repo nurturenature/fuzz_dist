@@ -121,8 +121,8 @@
     :perf
   using jepsen.nemesis.compose"
   [db workload opts]
-  {:nemesis (nemesis/full-nemesis opts)
-   :perf    (nemesis/full-perf opts)
+  {:nemesis (nemesis/some-nemesis (:faults opts) opts)
+   :perf    (nemesis/some-perf    (:faults opts) opts)
    :generator  (gen/phases
                 (->> (:generator workload)
                      (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
@@ -134,7 +134,7 @@
                 (map (fn [[_ nem]]
                        (let [nemesis (nem opts)]
                          (gen/nemesis {:type :info, :f (:stop nemesis)})))
-                     nemesis/all-nemeses)
+                     (select-keys nemesis/all-nemeses (seq (:faults opts))))
 
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})

@@ -161,17 +161,6 @@
   {:noop-quiesce    noop-quiesce
    :noop-final-read noop-final-read})
 
-(defn full-nemesis
-  "Merges together all nemeses and noops to a singled composed nemesis."
-  [opts]
-  (nemesis/compose
-   (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
-                                   (assoc acc
-                                          (:msgs nem) (:f nem))))
-
-           {}
-           (merge all-nemeses all-noops))))
-
 (defn some-nemesis
   "Merges together given nemeses and all noops to a singled composed nemesis."
   [nemeses opts]
@@ -182,15 +171,6 @@
 
            {}
            (merge (select-keys all-nemeses nemeses) all-noops))))
-
-(defn full-perf
-  "Merges together all perfs into a set."
-  [opts]
-  (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
-                                  (conj acc
-                                        (:perf nem))))
-          #{}
-          (merge all-nemeses all-noops)))
 
 (defn some-perf
   "Merges together all given nemeses perfs and all noops into a set."
