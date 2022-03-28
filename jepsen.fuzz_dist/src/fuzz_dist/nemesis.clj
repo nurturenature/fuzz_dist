@@ -38,12 +38,12 @@
 
     (invoke! [this test op]
       (case (:f op)
-        :start-dc2dc-net-fail (net/drop! (:net test)
-                                         test
-                                         (rand-nth (:nodes test))
-                                         (rand-nth (:nodes test)))
-        :stop-dc2dc-net-fail (net/heal! (:net test)
-                                        test)))
+        :start-dc2dc-netfail (let [nodes (shuffle (:nodes test))
+                                   src   (first  nodes)
+                                   dest  (second nodes)]
+                               (net/drop! (:net test) test src dest))
+
+        :stop-dc2dc-netfail  (net/heal! (:net test) test)))
 
     (teardown! [this test])))
 
@@ -121,6 +121,20 @@
              :start #{gen-start}
              :stop  #{gen-stop}
              :color tomato}}))
+
+(defn dc2dc-netfail
+  [opts]
+  (let [gen-start :start-dc2dc-netfail
+        gen-stop  :stop-dc2dc-netfail]
+    {:start gen-start
+     :stop  gen-stop
+     :msgs  {gen-start :start-dc2dc-netfail
+             gen-stop  :stop-dc2dc-netfail}
+     :f     (dc2dc-nemesis)
+     :perf  {:name "dc2dc netfail"
+             :start #{gen-start}
+             :stop  #{gen-stop}
+             :color orangered}}))
 
 (defn noop-quiesce
   [opts]
