@@ -102,17 +102,15 @@
 
 (defn gen-rand-nemesis
   [opts]
-  (let [nemesis      ((nemesis/all-nemeses
-                       (rand-nth (seq (:faults opts)))) opts)
-        [pre-range,
-         dur-range,
-         post-range] (:faults-times opts)]
+  (let [nemesis          ((nemesis/all-nemeses
+                           (rand-nth (seq (:faults opts)))) opts)
+        [quiet-range,
+         duration-range] (:faults-times opts)]
     (gen/phases
-     (gen/sleep (util/rand-int-from-range pre-range))
+     (gen/sleep (util/rand-int-from-range quiet-range))
      {:type :info, :f (:start nemesis)}
-     (gen/sleep (util/rand-int-from-range dur-range))
-     {:type :info, :f (:stop nemesis)}
-     (gen/sleep (util/rand-int-from-range post-range)))))
+     (gen/sleep (util/rand-int-from-range duration-range))
+     {:type :info, :f (:stop nemesis)})))
 
 (defn g-set-compose
   "Construct a
@@ -169,8 +167,8 @@
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
                              "-" (if (:nemesis opts)
-                                   (str (seq (:nemesis opts)) "-" (:nemesis-interval opts)                  "s")
-                                   (str (seq (:faults opts))  "-" (util/pprint-ranges (:faults-times opts)) "s"))
+                                   (str (seq (:nemesis opts)) "-at-" (:nemesis-interval opts)                  "s")
+                                   (str (seq (:faults opts))  "-at-" (util/pprint-ranges (:faults-times opts)) "s"))
                              "-for-" (:time-limit opts) "s"
                              "-" (util/pprint-range (:rate opts)) "ts"
                              "-" workload-name)
@@ -223,8 +221,8 @@
                      set))
     :validate [(partial every? nemesis/all-nemeses) (cli/one-of nemesis/all-nemeses)]]
 
-   [nil "--faults-times [[T,T] [T,T] [T,T]" "[Minimum, Maximum] of [Pre-quiet, Duration, Post-quiet] times."
-    :default  [[1,1] [5,5] [1,1]]
+   [nil "--faults-times [[QT,QT] [DT,DT]]" "Range of [[QuietMin, QuietMax] [DurationMin, DurationMax]] times."
+    :default  [[1,5] [4,6]]
     :parse-fn read-string
     ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]
     ]
@@ -236,7 +234,7 @@
     ]])
 
 (defn parse-faults
-  "Post-processes the parsed CLI options structure."
+  "Post-processes :faults #{:all}."
   [parsed]
   (let [options (:options parsed)
         faults  (:faults options)]
@@ -255,12 +253,11 @@
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of test options, by
-  combining all workloads, faults, and fault duration range ."
+  combining all workloads, faults, fault durations, and rates."
   [opts]
   (let [faults                (:faults opts)
-        [[pre-min,pre-max]
-         [dur-min,dur-max]
-         [post-min,post-max]] (:faults-times opts)
+        [[quiet-min,quiet-max]
+         [dur-min,dur-max]]   (:faults-times opts)
         durations             (range dur-min (+ dur-max 1))
         [rate-min,rate-max]   (:rate opts)
         rates                 (range rate-min (+ rate-max 1))
@@ -270,9 +267,8 @@
            (assoc opts
                   :workload w
                   :faults #{f}
-                  :faults-times [[pre-min,pre-max]
-                                 [d,d]
-                                 [post-min,post-max]]
+                  :faults-times [[quiet-min,quiet-max]
+                                 [d,d]]
                   :rate [r,r]))
          (map fuzz-dist-test))))
 
