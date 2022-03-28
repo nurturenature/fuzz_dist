@@ -258,17 +258,17 @@
   (let [faults                (:faults opts)
         [[quiet-min,quiet-max]
          [dur-min,dur-max]]   (:faults-times opts)
-        durations             (range dur-min (+ dur-max 1))
+        quiets                (range quiet-min (+ quiet-max 1))
+        durations             (range dur-min   (+ dur-max 1))
         [rate-min,rate-max]   (:rate opts)
-        rates                 (range rate-min (+ rate-max 1))
+        rates                 (range rate-min  (+ rate-max 1))
         workloads             [(:workload opts)]
         counts                (range (:test-count opts))]
-    (->> (for [i counts, w workloads, f faults, d durations, r rates]
+    (->> (for [i counts, w workloads, f faults, q quiets, d durations, r rates]
            (assoc opts
                   :workload w
                   :faults #{f}
-                  :faults-times [[quiet-min,quiet-max]
-                                 [d,d]]
+                  :faults-times [[q,q] [d,d]]
                   :rate [r,r]))
          (map fuzz-dist-test))))
 
