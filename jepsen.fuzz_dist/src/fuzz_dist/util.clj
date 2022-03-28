@@ -19,9 +19,24 @@
 (defn nodes-to-fqdn [nodes app] (map #(n-to-fqdn % app) nodes))
 
 (defn rand-int-from-range
-  [[mi,ma]] (rand-int-from-range mi ma)
-  [mi ma]
-  (+ mi
-     (rand-int (+ (- ma
-                     mi)
-                  1))))
+  ([[mi,ma]] (rand-int-from-range mi ma))
+  ([mi ma]
+   (+ mi
+      (rand-int (+ (- ma
+                      mi)
+                   1)))))
+
+(defn pprint-range
+  [[from to]]
+  (if (= from to)
+    (str from)
+    (str from "-" to)))
+
+(defn pprint-ranges
+  [ranges]
+  (if (= (count ranges) 1)
+    (pprint-range (first ranges))
+    (reduce (fn [acc, range]
+              (str acc "," (pprint-range range)))
+            (str (pprint-range (first ranges)))
+            (rest ranges))))
