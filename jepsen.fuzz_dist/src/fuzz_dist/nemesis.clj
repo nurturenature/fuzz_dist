@@ -38,12 +38,12 @@
 
     (invoke! [this test op]
       (case (:f op)
-        :start-dc2dc-net-fail (net/drop! (:net test)
-                                         test
-                                         (rand-nth (:nodes test))
-                                         (rand-nth (:nodes test)))
-        :stop-dc2dc-net-fail (net/heal! (:net test)
-                                        test)))
+        :start-dc2dc-netfail (let [nodes (shuffle (:nodes test))
+                                   src   (first  nodes)
+                                   dest  (second nodes)]
+                               (net/drop! (:net test) test src dest))
+
+        :stop-dc2dc-netfail  (net/heal! (:net test) test)))
 
     (teardown! [this test])))
 
@@ -122,6 +122,20 @@
              :stop  #{gen-stop}
              :color tomato}}))
 
+(defn dc2dc-netfail
+  [opts]
+  (let [gen-start :start-dc2dc-netfail
+        gen-stop  :stop-dc2dc-netfail]
+    {:start gen-start
+     :stop  gen-stop
+     :msgs  {gen-start :start-dc2dc-netfail
+             gen-stop  :stop-dc2dc-netfail}
+     :f     (dc2dc-nemesis)
+     :perf  {:name "dc2dc netfail"
+             :start #{gen-start}
+             :stop  #{gen-stop}
+             :color orangered}}))
+
 (defn noop-quiesce
   [opts]
   (let [gen-start :start-quiesce
@@ -161,17 +175,6 @@
   {:noop-quiesce    noop-quiesce
    :noop-final-read noop-final-read})
 
-(defn full-nemesis
-  "Merges together all nemeses and noops to a singled composed nemesis."
-  [opts]
-  (nemesis/compose
-   (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
-                                   (assoc acc
-                                          (:msgs nem) (:f nem))))
-
-           {}
-           (merge all-nemeses all-noops))))
-
 (defn some-nemesis
   "Merges together given nemeses and all noops to a singled composed nemesis."
   [nemeses opts]
@@ -183,14 +186,14 @@
            {}
            (merge (select-keys all-nemeses nemeses) all-noops))))
 
-(defn full-perf
-  "Merges together all perfs into a set."
-  [opts]
+(defn some-perf
+  "Merges together all given nemeses perfs and all noops into a set."
+  [nemeses opts]
   (reduce (fn [acc [_ nemesis]] (let [nem (nemesis opts)]
                                   (conj acc
                                         (:perf nem))))
           #{}
-          (merge all-nemeses all-noops)))
+          (merge (select-keys all-nemeses nemeses) all-noops)))
 
 (defn g-set-nemesis-package
   "A full nemesis package. Options are those for

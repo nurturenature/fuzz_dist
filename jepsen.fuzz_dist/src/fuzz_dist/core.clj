@@ -67,7 +67,7 @@
   test constructor."
   [opts]
   {:client    (GSetClient. nil)
-   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (range))
+   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (drop 1 (range)))
                         (repeat {:type :invoke, :f :read, :value nil})])
    :final-generator (gen/each-thread {:type :invoke, :f :read, :value nil})
    :checker (checker/set-full)})
@@ -84,7 +84,7 @@
                                                         :faults   (:nemesis opts)
                                                         :partition {:targets [:one :minority-third :majority :majorities-ring]}})
         generator       (->> (:generator workload)
-                             (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
+                             (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
                              (gen/nemesis (:generator nemesis-package))
                              (gen/time-limit (:time-limit opts)))
         ; If this workload has a final generator, end the nemesis, wait for
@@ -102,20 +102,15 @@
 
 (defn gen-rand-nemesis
   [opts]
-  (let [nemeses       (case (:faults opts)
-                        #{:all} (set (keys nemesis/all-nemeses))
-                        #{:none} #{}
-                        (:faults opts))
-        nemesis       ((nemesis/all-nemeses (rand-nth (seq nemeses))) opts)
-        [[pre-range]
-         [dur-range]
-         [post-range]] (:faults-times opts)
+  (let [nemesis          ((nemesis/all-nemeses
+                           (rand-nth (seq (:faults opts)))) opts)
+        [quiet-range,
+         duration-range] (:faults-times opts)]
     (gen/phases
-     (gen/sleep (util/rand-int-from-range pre-range))
+     (gen/sleep (util/rand-int-from-range quiet-range))
      {:type :info, :f (:start nemesis)}
-     (gen/sleep (util/rand-int-from-range dur-range))
-     {:type :info, :f (:stop nemesis)}
-     (gen/sleep (util/rand-int-from-range post-range)))))
+     (gen/sleep (util/rand-int-from-range duration-range))
+     {:type :info, :f (:stop nemesis)})))
 
 (defn g-set-compose
   "Construct a
@@ -124,20 +119,35 @@
     :perf
   using jepsen.nemesis.compose"
   [db workload opts]
-  {:nemesis (nemesis/full-nemesis opts)
-   :perf    (nemesis/full-perf opts)
+  {:nemesis (nemesis/some-nemesis (:faults opts) opts)
+   :perf    (nemesis/some-perf    (:faults opts) opts)
    :generator  (gen/phases
                 (->> (:generator workload)
-                     (gen/stagger (/ (utils/rand-int-from-range (:rate opts))))
+                     (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
                      (gen/nemesis (gen/cycle
                                    (fn [] (gen-rand-nemesis opts))))
                      (gen/time-limit (:time-limit opts)))
 
                 ;; TODO :final-generator pattern
+
+                ;; :stop all possible nemeses
+                (gen/log "Healing all nemeses...")
                 (map (fn [[_ nem]]
                        (let [nemesis (nem opts)]
                          (gen/nemesis {:type :info, :f (:stop nemesis)})))
-                     nemesis/all-nemeses)
+                     (select-keys nemesis/all-nemeses (seq (:faults opts))))
+
+                ;; a simple sequence of transactions to help clarify end state and final reads
+                (gen/log "Final adds in healed state...")
+                (gen/sleep 1)
+                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
+                (gen/sleep 1)
+                (gen/clients
+                 (->>
+                  (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (drop 1 (range)))
+                  (gen/stagger (/ 1))
+                  (gen/time-limit 5)))
+                (gen/sleep 1)
 
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})
@@ -171,9 +181,11 @@
            {:name       (str "fuzz-dist"
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
-                             "-" (seq (:faults opts)) "@" (:faults-times opts)
+                             "-" (if (:nemesis opts)
+                                   (str (seq (:nemesis opts)) "-at-" (:nemesis-interval opts)                  "s")
+                                   (str (seq (:faults opts))  "-at-" (util/pprint-ranges (:faults-times opts)) "s"))
                              "-for-" (:time-limit opts) "s"
-                             "-@" (:rate opts) "ts"
+                             "-" (util/pprint-range (:rate opts)) "ts"
                              "-" workload-name)
             :nodes      (:nodes opts)
             :os         debian/os
@@ -224,8 +236,8 @@
                      set))
     :validate [(partial every? nemesis/all-nemeses) (cli/one-of nemesis/all-nemeses)]]
 
-   [nil "--faults-times [[T,T] [T,T] [T,T]" "[Minimum, Maximum] of [Pre-quiet, Duration, Post-quiet] times."
-    :default  [[1,1] [5,5] [1,1]]
+   [nil "--faults-times [[QT,QT] [DT,DT]]" "Range of [[QuietMin, QuietMax] [DurationMin, DurationMax]] times."
+    :default  [[1,5] [4,6]]
     :parse-fn read-string
     ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]
     ]
@@ -236,33 +248,42 @@
     ;; TODO :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
     ]])
 
+(defn parse-faults
+  "Post-processes :faults #{:all}."
+  [parsed]
+  (let [options (:options parsed)
+        faults  (:faults options)]
+    (assoc parsed :options (-> options
+                               (assoc :faults (case faults
+                                                #{:all} (set (keys nemesis/all-nemeses))
+                                                #{:none} #{}
+                                                faults))))))
+
 (defn opt-fn
   "Post-processes the parsed CLI options structure."
   [parsed]
-  (if (= #{:all} (:faults parsed))
-    (assoc parsed :faults (set (keys nemesis/all-nemeses)))
-    parsed))
+  (-> parsed
+      parse-faults
+      cli/test-opt-fn))
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of test options, by
-  combining all workloads, faults, and fault duration range ."
+  combining all workloads, faults, fault durations, and rates."
   [opts]
   (let [faults                (:faults opts)
-        [[pre-min,pre-max]
-         [dur-min,dur-max]
-         [post-min,post-max]] (:faults-times opts)
-        durations             (range dur-min (+ dur-max 1))
+        [[quiet-min,quiet-max]
+         [dur-min,dur-max]]   (:faults-times opts)
+        quiets                (range quiet-min (+ quiet-max 1))
+        durations             (range dur-min   (+ dur-max 1))
         [rate-min,rate-max]   (:rate opts)
-        rates                 (range rate-min (+ rate-max 1))
+        rates                 (range rate-min  (+ rate-max 1))
         workloads             [(:workload opts)]
         counts                (range (:test-count opts))]
-    (->> (for [i counts, w workloads, f faults, d durations, r rates]
+    (->> (for [w workloads, f faults, q quiets, d durations, r rates, i counts]
            (assoc opts
                   :workload w
                   :faults #{f}
-                  :faults-times [[pre-min,pre-max]
-                                 [d,d]
-                                 [post-min,post-max]]
+                  :faults-times [[q,q] [d,d]]
                   :rate [r,r]))
          (map fuzz-dist-test))))
 
@@ -272,9 +293,9 @@
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn  fuzz-dist-test
                                          :opt-spec (concat test-opt-spec opt-spec)
-                                         :opt-fn   opt-fn})
+                                         :opt-fn*  opt-fn})
                    (cli/test-all-cmd    {:tests-fn all-tests
                                          :opt-spec (concat test-opt-spec opt-spec)
-                                         :opt-fn   opt-fn})
+                                         :opt-fn*  opt-fn})
                    (cli/serve-cmd))
             args))
