@@ -67,7 +67,7 @@
   test constructor."
   [opts]
   {:client    (GSetClient. nil)
-   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (range))
+   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (drop 1 (range)))
                         (repeat {:type :invoke, :f :read, :value nil})])
    :final-generator (gen/each-thread {:type :invoke, :f :read, :value nil})
    :checker (checker/set-full)})
@@ -144,7 +144,7 @@
                 (gen/sleep 1)
                 (gen/clients
                  (->>
-                  (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (range))
+                  (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (drop 1 (range)))
                   (gen/stagger (/ 1))
                   (gen/time-limit 5)))
                 (gen/sleep 1)
@@ -279,7 +279,7 @@
         rates                 (range rate-min  (+ rate-max 1))
         workloads             [(:workload opts)]
         counts                (range (:test-count opts))]
-    (->> (for [i counts, w workloads, f faults, q quiets, d durations, r rates]
+    (->> (for [w workloads, f faults, q quiets, d durations, r rates, i counts]
            (assoc opts
                   :workload w
                   :faults #{f}
