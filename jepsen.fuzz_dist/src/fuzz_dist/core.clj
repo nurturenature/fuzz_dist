@@ -129,10 +129,25 @@
                      (gen/time-limit (:time-limit opts)))
 
                 ;; TODO :final-generator pattern
+
+                ;; :stop all possible nemeses
+                (gen/log "Healing all nemeses...")
                 (map (fn [[_ nem]]
                        (let [nemesis (nem opts)]
                          (gen/nemesis {:type :info, :f (:stop nemesis)})))
                      (select-keys nemesis/all-nemeses (seq (:faults opts))))
+
+                ;; a simple sequence of transactions to help clarify end state and final reads
+                (gen/log "Final adds in healed state...")
+                (gen/sleep 1)
+                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
+                (gen/sleep 1)
+                (gen/clients
+                 (->>
+                  (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (range))
+                  (gen/stagger (/ 1))
+                  (gen/time-limit 5)))
+                (gen/sleep 1)
 
                 (gen/log "Let database quiesce...")
                 (gen/nemesis {:type :info, :f :start-quiesce})
