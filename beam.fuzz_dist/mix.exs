@@ -41,7 +41,7 @@ defmodule FuzzDist.MixProject do
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:jason, "~> 1.3"},
       {:libcluster, "~> 3.3"},
-      {:telemetry, "~> 1.0"}
+      {:telemetry, "~> 1.1"}
     ]
   end
 
