@@ -3,12 +3,13 @@
             [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [fuzz-dist
-             [client :as client]
+             [client :as fd-client]
              [util :as util]]
             [jepsen
              [db :as db]
              [control :as c]]
-            [jepsen.control [scp :as scp]
+            [jepsen.control
+             [scp :as scp]
              [util :as cu]]
             [manifold.stream :as s]))
 
@@ -71,12 +72,12 @@
     (primaries [db test]
       (:nodes test))
     (setup-primary! [db test node]
-      (let [conn @(http/websocket-client (util/node-url node))]
+      (let [conn @(http/websocket-client (fd-client/node-url node))]
       ;; TODO test type: :ok response
         (info ":db :setup_primary return:"
-              (client/ws-invoke conn
-                                :db
-                                :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")))
+              (fd-client/ws-invoke conn
+                                   :db
+                                   :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")))
         (s/close! conn)))
 
     db/LogFiles

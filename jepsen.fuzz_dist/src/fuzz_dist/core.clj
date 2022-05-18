@@ -1,168 +1,47 @@
 (ns fuzz-dist.core
   (:require
-   [aleph.http :as http]
-   [cheshire.core :as json]
-   [clojure.set :as set]
    [clojure.string :as str]
    [clojure.tools.logging :refer :all]
-   [fuzz-dist [db :as db]
+   [fuzz-dist
+    [db :as db]
     [nemesis :as nemesis]
     [util :as util]]
-   [jepsen [cli :as cli]
+   [fuzz-dist.workload [g-set :as g-set]]
+   [jepsen
+    [cli :as cli]
     [checker :as checker]
-    [client :as client]
     [generator :as gen]
     [tests :as tests]]
    [jepsen.checker.timeline :as timeline]
-   [jepsen.os.debian :as debian]
-   [manifold.stream :as s]))
+   [jepsen.os.debian :as debian]))
 
 (defn g-set-read [_ _]
   (repeat {:type :invoke, :f :read, :value nil}))
 (defn g-set-add  [_ _]
   (map (fn [x] {:type :invoke, :f :add, :value (str x)}) (range)))
 
-(defn ws-invoke
-  "Invokes the op over the ws connection.
-  On the BEAM side a :cowboy_websocket_handler dispatches to an Elixir @behavior."
-  [conn mod fun op]
-  (s/try-put! conn
-              (json/generate-string
-               {:mod mod
-                :fun fun
-                :args op})
-              5000)
+(defn combine-workload-package-generators
+  "Constructs a test generator by combining workload and package generators
+   configures with CLI test opts"
+  [opts workload package]
 
-  (json/parse-string @(s/try-take! conn 60000) true)
-  ;; TODO: catch timeout
-  )
+  (gen/phases
+   (->> (:generator workload)
+        (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
+        (gen/nemesis (:generator package))
+        (gen/time-limit (:time-limit opts)))
 
-(defrecord GSetClient [conn]
-  client/Client
-  (open! [this test node]
-    (info node "Client/open" (util/node-url node))
-    (assoc this :conn @(http/websocket-client (util/node-url node))))
+   (:final-generator package)
 
-  (setup! [this test])
-
-  (invoke! [_ test op]
-    (case (:f op)
-      :add (let [resp (ws-invoke conn :g_set :add op)]
-             (case (:type resp)
-               "ok"   (assoc op :type :ok)
-               "fail" (assoc op :type :fail, :error (:error resp))))
-      :read (let [resp (ws-invoke conn :g_set :read op)]
-              (case (:type resp)
-                ;; sort returned set for human readability, json unorders
-                "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
-                "fail" (assoc op :type :fail, :error (:error resp))))))
-
-  (teardown! [this test])
-
-  (close! [_ test]
-    (s/close! conn)))
-
-(defn g-set-workload
-  "Constructs a workload for a grow-only set, given options from the CLI
-  test constructor."
-  [opts]
-  {:client    (GSetClient. nil)
-   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (drop 1 (range)))
-                        (repeat {:type :invoke, :f :read, :value nil})])
-   :final-generator (gen/each-thread {:type :invoke, :f :read, :value nil})
-   :checker (checker/set-full)})
-
-(defn g-set-package
-  "Construct a
-    :generator
-    :nemesis
-    :perf
-  using a jepsen.nemesis.combined/nemesis-package"
-  [db workload opts]
-  (let [nemesis-package (nemesis/g-set-nemesis-package {:db       db
-                                                        :interval (:nemesis-interval opts)
-                                                        :faults   (:nemesis opts)
-                                                        :partition {:targets [:one :minority-third :majority :majorities-ring]}})
-        generator       (->> (:generator workload)
-                             (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
-                             (gen/nemesis (:generator nemesis-package))
-                             (gen/time-limit (:time-limit opts)))
-        ; If this workload has a final generator, end the nemesis, wait for
-        ; recovery, and perform final ops.
-        generator (if-let [final (:final-generator workload)]
-                    (gen/phases generator
-                                (gen/nemesis (:final-generator nemesis-package))
-                                (gen/log "Waiting for recovery...")
-                                (gen/sleep 5)
-                                (gen/clients final))
-                    generator)]
-    {:generator generator
-     :nemesis (:nemesis nemesis-package)
-     :perf    (:perf    nemesis-package)}))
-
-(defn gen-rand-nemesis
-  [opts]
-  (let [nemesis          ((nemesis/all-nemeses
-                           (rand-nth (seq (:faults opts)))) opts)
-        [quiet-range,
-         duration-range] (:faults-times opts)]
-    (gen/phases
-     (gen/sleep (util/rand-int-from-range quiet-range))
-     {:type :info, :f (:start nemesis)}
-     (gen/sleep (util/rand-int-from-range duration-range))
-     {:type :info, :f (:stop nemesis)})))
-
-(defn g-set-compose
-  "Construct a
-    :generator
-    :nemesis
-    :perf
-  using jepsen.nemesis.compose"
-  [db workload opts]
-  {:nemesis (nemesis/some-nemesis (:faults opts) opts)
-   :perf    (nemesis/some-perf    (:faults opts) opts)
-   :generator  (gen/phases
-                (->> (:generator workload)
-                     (gen/stagger (/ (util/rand-int-from-range (:rate opts))))
-                     (gen/nemesis (gen/cycle
-                                   (fn [] (gen-rand-nemesis opts))))
-                     (gen/time-limit (:time-limit opts)))
-
-                ;; TODO :final-generator pattern
-
-                ;; :stop all possible nemeses
-                (gen/log "Healing all nemeses...")
-                (map (fn [[_ nem]]
-                       (let [nemesis (nem opts)]
-                         (gen/nemesis {:type :info, :f (:stop nemesis)})))
-                     (select-keys nemesis/all-nemeses (seq (:faults opts))))
-
-                ;; a simple sequence of transactions to help clarify end state and final reads
-                (gen/log "Final adds in healed state...")
-                (gen/sleep 1)
-                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
-                (gen/sleep 1)
-                (gen/clients
-                 (->>
-                  (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (drop 1 (range)))
-                  (gen/stagger (/ 1))
-                  (gen/time-limit 5)))
-                (gen/sleep 1)
-
-                (gen/log "Let database quiesce...")
-                (gen/nemesis {:type :info, :f :start-quiesce})
-                (gen/sleep 5)
-                (gen/nemesis {:type :info, :f :stop-quiesce})
-
-                (gen/log "Final read...")
-                (gen/sleep 1)
-                (gen/nemesis {:type :info, :f :start-final-read})
-                (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
-                (gen/nemesis {:type :info, :f :stop-final-read}))})
+   (:final-generator workload)))
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
-  {:g-set g-set-workload})
+  {:g-set g-set/workload})
+
+(def packages
+  "A map of package names to functions that construct packages, given opts."
+  {:g-set g-set/package})
 
 (defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
@@ -171,43 +50,36 @@
   (let [db            (db/db :git)
         workload-name (:workload opts)
         workload      ((workloads workload-name) opts)
-        package       (if (:nemesis opts)
-                        (g-set-package db workload opts)
-                        (g-set-compose db workload opts))]
+        package       ((packages  workload-name) opts)]
 
     (merge tests/noop-test
            opts
-           workload
            {:name       (str "fuzz-dist"
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
-                             "-" (if (:nemesis opts)
-                                   (str (seq (:nemesis opts)) "-at-" (:nemesis-interval opts)                  "s")
-                                   (str (seq (:faults opts))  "-at-" (util/pprint-ranges (:faults-times opts)) "s"))
+                             "-" (str (seq (:faults opts))  "-at-" (util/pprint-ranges (:faults-times opts)) "s")
                              "-for-" (:time-limit opts) "s"
                              "-" (util/pprint-range (:rate opts)) "ts"
                              "-" workload-name)
-            :nodes      (:nodes opts)
             :os         debian/os
             :db         db
             :client     (:client workload)
             :nemesis    (:nemesis package)
             :pure-generators true
-            :generator  (:generator package)
+            :generator  (combine-workload-package-generators opts workload package)
             :checker    (checker/compose
                          {:workload   (:checker workload)
                           :perf       (checker/perf
                                        {:nemeses (:perf package)})
                           :timeline   (timeline/html)
                           :stats      (checker/stats)
-                          :exceptions (checker/unhandled-exceptions)})})))
-
-(def nemeses
-  "A set of valid nemeses you can pass at the CLI."
-  #{:partition})
+                          :exceptions (checker/unhandled-exceptions)
+                          ;; TODO log file patterns
+                          ;; :logs       (checker/log-file-pattern #"ERROR" ".log")
+                          })})))
 
 (def test-opt-spec
-  "Options for single tests."
+  "Options for tests."
   [["-w" "--workload NAME" "What workload to run."
     :default :g-set
     :parse-fn keyword
@@ -215,20 +87,7 @@
 
 (def opt-spec
   "Additional command line options."
-  [[nil "--nemesis FAULTS" "A comma-separated list of packaged faults to inject."
-    ;; :default #{:partition} let --faults default?
-    :parse-fn (fn [string]
-                (->> (str/split string #"\s*,\s*")
-                     (map keyword)
-                     set))
-    :validate [(partial every? nemeses) (cli/one-of nemeses)]]
-
-   [nil "--nemesis-interval SECONDS" "How many seconds between nemesis operations, on average?"
-    :default  10
-    :parse-fn read-string
-    :validate [pos? "Must be positive"]]
-
-   [nil "--faults FAULTS" "A comma-separated list of specific faults to inject."
+  [[nil "--faults FAULTS" "A comma-separated list of specific faults to inject."
     :default #{:all}
     :parse-fn (fn [string]
                 (->> (str/split string #"\s*,\s*")
@@ -249,7 +108,7 @@
     ]])
 
 (defn parse-faults
-  "Post-processes :faults #{:all}."
+  "Post-processes :faults #{:all}, #{:none}."
   [parsed]
   (let [options (:options parsed)
         faults  (:faults options)]
