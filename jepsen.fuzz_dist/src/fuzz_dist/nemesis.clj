@@ -3,7 +3,6 @@
    [clojure.set :as set]
    [fuzz-dist.db :as db]
    [jepsen.nemesis :as nemesis]
-   [jepsen.nemesis.combined :as nc]
    [jepsen.net :as net]))
 
 ;; reds
@@ -194,10 +193,3 @@
                                         (:perf nem))))
           #{}
           (merge (select-keys all-nemeses nemeses) all-noops)))
-
-(defn g-set-nemesis-package
-  "A full nemesis package. Options are those for
-  jepsen.nemesis.combined/nemesis-package."
-  [opts]
-  (nc/compose-packages
-   [(nc/partition-package opts)]))

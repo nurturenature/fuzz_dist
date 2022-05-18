@@ -1,6 +1,5 @@
 (ns jepsen.fuzz-dist-test
-  (:require [clojure.test :refer :all]
-            [jepsen.fuzz-dist :refer :all]))
+  (:require [clojure.test :refer :all]))
 
 (deftest a-test
   (testing "This is a Jepsen test, and we are on the other side of the black box..."
