@@ -138,9 +138,16 @@ https://github.com/nurturenature/fuzz_dist/issues/38.
 
 ```bash
 cd $project/fuzz_dist/jepsen.fuzz_dist
-lein run test --workload demo
+# run a random test with default values
+lein run test
 
-# has webserver to interact with test results
-# http://localhost:8080
+# run a series of tests iterating through default values
+lein run test-all
+
+# launch webserver to interact with, http://localhost:8080,
+# test results, leave terminal open to leave webserver running
 lein run serve
+
+# list all options
+lein run test --help
 ```
