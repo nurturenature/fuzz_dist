@@ -5,7 +5,11 @@
 (def control-antidote (str control-proj "/" "antidote"))
 (def control-fuzz-dist (str control-proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
 (def node-antidote "/root/antidote")
+(def node-antidote-log-file (str node-antidote "/" "antidote.daemon.log"))
+(def node-antidote-pid-file (str node-antidote "/" "antidote.daemon.pid"))
 (def node-fuzz-dist "/root/fuzz_dist")
+(def node-fuzz-dist-log-file (str node-fuzz-dist "/" "fuzz_dist.daemon.log"))
+(def node-fuzz-dist-pid-file (str node-fuzz-dist "/" "fuzz_dist.daemon.pid"))
 
 (defn n-to-fqdn [node app] (let [[n num] node]
                              (str app "@" "192.168.122.10" num)))

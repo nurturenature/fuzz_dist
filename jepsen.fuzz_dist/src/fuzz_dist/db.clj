@@ -16,56 +16,32 @@
   "AntidoteDB."
   [version]
   (reify db/DB
-    (setup! [_ test node]
-      ;; cp from control to node to install
+    (setup! [this test node]
+      ;; cp antidote from control to node to install
       (scp/scp! {:port 22 :private-key-path (str util/control-root "/" ".ssh/id_rsa")}
                 [(str util/control-antidote "/" "_build/default/rel/antidote")]
                 (str "root" "@" node ":" "/root"))
 
-      (c/cd util/node-antidote
-            (c/exec
-             (c/env {:NODE_NAME (util/n-to-fqdn node "antidote")
-                     :COOKIE "antidote"})
-             "bin/antidote"
-             "daemon"))
-
-      ;; cp from control to node to install
+      ;; cp fuzz_dist from control to node to install
       (scp/scp! {:port 22 :private-key-path (str util/control-root "/" ".ssh/id_rsa")}
                 [(str util/control-fuzz-dist "/" "_build/prod/rel/fuzz_dist")]
                 (str "root" "@" node ":" "/root"))
 
-      (c/cd util/node-fuzz-dist
-            (c/exec
-             (c/env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
-                     :COOKIE "fuzz_dist"})
-             "bin/fuzz_dist"
-             "daemon"))
+      (db/start! this test node)
 
       (Thread/sleep 15000))
 
-    (teardown! [_ test node]
-      (try
-        (c/cd util/node-antidote
-              (c/exec
-               (c/env {:NODE_NAME (util/n-to-fqdn node "antidote")
-                       :COOKIE "antidote"})
-               "bin/antidote"
-               "stop"))
-        (c/cd util/node-fuzz-dist
-              (c/exec
-               (c/env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
-                       :COOKIE "fuzz_dist"})
-               "bin/fuzz_dist"
-               "stop"))
-        (catch Exception e))
+    (teardown! [this test node]
+      (db/kill! this test node)
 
       (Thread/sleep 5000)
 
-      (cu/grepkill! "antidote")
-      (cu/grepkill! "fuzz_dist")
-      (c/exec :rm :-rf "/root/antidote")
-      (c/exec :rm :-rf "/root/fuzz_dist")
-      (c/exec :rm :-f  "/root/.erlang.cookie"))
+      (c/su
+       (cu/grepkill! "antidote")
+       (cu/grepkill! "fuzz_dist")
+       (c/exec :rm :-rf "/root/antidote")
+       (c/exec :rm :-rf "/root/fuzz_dist")
+       (c/exec :rm :-f  "/root/.erlang.cookie")))
 
     db/Primary
     (primaries [db test]
@@ -81,16 +57,46 @@
 
     db/LogFiles
     (log-files [db test node]
-      {"/root/fuzz_dist/tmp/log"    "fuzz_dist_log"
+      {util/node-fuzz-dist-log-file "fuzz_dist_daemon"
+       "/root/fuzz_dist/tmp/log"    "fuzz_dist_log"
+       util/node-antidote-log-file  "antidote_daemon"
        "/root/antidote/logger_logs" "antidote_logger_logs"
-       "/root/antidote/log"         "antidote_log"})))
+       "/root/antidote/log"         "antidote_log"})
 
-;; TODO node stopper/starter
-(defn start!
-  [test node]
-  :not-implemented)
+    db/Process
+    (start! [this test node]
 
-;; TODO node stopper/starter
-(defn stop!
-  [test node]
-  :not-implemented)
+      (c/su
+       (cu/start-daemon!
+        {:chdir util/node-antidote
+         :env {:NODE_NAME (util/n-to-fqdn node "antidote")
+               :COOKIE "antidote"}
+         :logfile util/node-antidote-log-file
+         :pidfile util/node-antidote-pid-file}
+        "bin/antidote"
+        :start)
+
+       (cu/start-daemon!
+        {:chdir util/node-fuzz-dist
+         :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
+               :COOKIE "fuzz_dist"}
+         :logfile util/node-fuzz-dist-log-file
+         :pidfile util/node-fuzz-dist-pid-file}
+        "bin/fuzz_dist"
+        :start)))
+
+    (kill! [this test node]
+      (c/su
+       (cu/stop-daemon! util/node-fuzz-dist-pid-file)
+       (cu/stop-daemon! util/node-antidote-pid-file)))
+
+    db/Pause
+    (pause! [this test node]
+      (c/su
+       (cu/grepkill! :stop :fuzz_dist)
+       (cu/grepkill! :stop :antidote)))
+
+    (resume! [this test node]
+      (c/su
+       (cu/grepkill! :cont :antidote)
+       (cu/grepkill! :cont :fuzz_dist)))))
