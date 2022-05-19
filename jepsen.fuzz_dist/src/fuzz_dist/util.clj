@@ -1,5 +1,4 @@
-(ns fuzz-dist.util
-  (:require [clojure.string :as str]))
+(ns fuzz-dist.util)
 
 (def control-root "/home/jsuttor")
 (def control-proj (str control-root "/" "projects"))

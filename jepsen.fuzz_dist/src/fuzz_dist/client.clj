@@ -1,6 +1,5 @@
 (ns fuzz-dist.client
   (:require [cheshire.core :as json]
-            [clojure.string :as str]
             [manifold.stream :as s]))
 
 (defn node-url
