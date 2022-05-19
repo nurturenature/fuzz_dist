@@ -18,23 +18,34 @@
 
 (def nemeses
   "The types of faults our nemesis can produce"
-  #{:partition})
+  #{:partition :pause :kill})
 
 (def special-nemeses
   "A map of special nemesis names to collections of faults"
   {:none      []
    :standard  [:partition]
-   :all       [:partition]})
+   :all       [:partition :pause :kill]})
 
 (def partition-targets
   "Valid targets for partition nemesis operations."
   #{:majority :minority-third :one :majority-ring :primaries})
 
+(def pause-targets
+  "Valid targets for pause nemesis operations."
+  #{:one})
+
+(def kill-targets
+  "Valid targets for kill nemesis operations."
+  #{:one})
+
 (def standard-nemeses
   "A collection of partial options maps for various nemeses we want to run as a
   part of test-all."
   [{:nemesis nil}
-   {:nemesis #{:partition}}])
+   {:nemesis #{:partition}}
+   {:nemesis #{:pause}}
+   {:nemesis #{:kill}}
+   {:nemesis #{:partition :pause :kill}}])
 
 (defn combine-workload-package-generators
   "Constructs a test generator by combining workload and package generators
@@ -63,6 +74,8 @@
                         :nodes     (:nodes opts)
                         :faults    (:nemesis opts)
                         :partition {:targets (:partition-targets opts)}
+                        :pause     {:targets (:pause-targets opts)}
+                        :kill      {:targets (:kill-targets opts)}
                         :interval  (:nemesis-interval opts)})]
 
     (merge tests/noop-test
@@ -70,7 +83,7 @@
            {:name       (str "fuzz-dist"
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
-                             "-" (str (seq (:nemesis opts))  "-at-" (:nemesis-interval opts) "s")
+                             "-" (str (seq (:nemesis opts))  "-" (:nemesis-interval opts) "s")
                              "-for-" (:time-limit opts) "s"
                              "-" (:rate opts) "ts"
                              "-" workload-name)
@@ -119,7 +132,7 @@
   "Additional command line options."
 
   [[nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
-    :default (:all special-nemeses)
+    :default (:standard special-nemeses)
     :parse-fn parse-nemesis-spec
     :validate [(partial every? (into nemeses (keys special-nemeses)))
                (str (cli/one-of nemeses) ", or " (cli/one-of special-nemeses))]]
@@ -133,6 +146,16 @@
     :default (vec partition-targets)
     :parse-fn parse-comma-kws
     :validate [(partial every? partition-targets) (cli/one-of partition-targets)]]
+
+   [nil "--pause-targets TARGETS" "A comma-separated list of nodes to target for process pauses; e.g. one,all"
+    :default (vec pause-targets)
+    :parse-fn parse-comma-kws
+    :validate [(partial every? pause-targets) (cli/one-of pause-targets)]]
+
+   [nil "--kill-targets TARGETS" "A comma-separated list of nodes to target for process kills; e.g. one,all"
+    :default (vec kill-targets)
+    :parse-fn parse-comma-kws
+    :validate [(partial every? kill-targets) (cli/one-of kill-targets)]]
 
    [nil "--rate HZ" "Target number of ops/sec"
     :default  10
