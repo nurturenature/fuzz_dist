@@ -1,10 +1,7 @@
 (ns fuzz-dist.workload.g-set
   (:require [aleph.http :as http]
             [clojure.tools.logging :refer :all]
-            [fuzz-dist
-             [client :as fd-client]
-             [nemesis :as nemesis]
-             [util :as util]]
+            [fuzz-dist.client :as fd-client]
             [jepsen
              [checker :as checker]
              [client :as client]
@@ -53,46 +50,13 @@
                       (->>
                        (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (drop 1 (range)))
                        (gen/stagger (/ 1))
-                       (gen/time-limit 5)))
+                       (gen/time-limit 10)))
                      (gen/sleep 1)
 
                      (gen/log "Let database quiesce...")
-                     (gen/nemesis {:type :info, :f :start-quiesce})
-                     (gen/sleep 5)
-                     (gen/nemesis {:type :info, :f :stop-quiesce})
+                     (gen/sleep 10)
 
                      (gen/log "Final read...")
                      (gen/sleep 1)
-                     (gen/nemesis {:type :info, :f :start-final-read})
-                     (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
-                     (gen/nemesis {:type :info, :f :stop-final-read}))
+                     (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
    :checker (checker/set-full)})
-
-(defn gen-rand-nemesis
-  [opts]
-  (let [nemesis          ((nemesis/all-nemeses
-                           (rand-nth (seq (:faults opts)))) opts)
-        [quiet-range,
-         duration-range] (:faults-times opts)]
-    (gen/phases
-     (gen/sleep (util/rand-int-from-range quiet-range))
-     {:type :info, :f (:start nemesis)}
-     (gen/sleep (util/rand-int-from-range duration-range))
-     {:type :info, :f (:stop nemesis)})))
-
-(defn package
-  "Constructs a package, {:nemesis, :generator, :final-generator, :perf},
-   for a g-set, given options from the CLI test constructor."
-  [opts]
-  {:nemesis         (nemesis/some-nemesis (:faults opts) opts)
-   :generator       (gen/cycle
-                     (fn [] (gen-rand-nemesis opts)))
-   :final-generator (gen/phases
-                     ;; :stop all possible nemeses
-                     (gen/log "Healing all nemeses...")
-                     (map (fn [[_ nem]]
-                            (let [nemesis (nem opts)]
-                              (gen/nemesis {:type :info, :f (:stop nemesis)})))
-                          (select-keys nemesis/all-nemeses (seq (:faults opts)))))
-
-   :perf              (nemesis/some-perf (:faults opts) opts)})
