@@ -1,6 +1,5 @@
 (ns fuzz-dist.db
   (:require [aleph.http :as http]
-            [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [fuzz-dist
              [client :as fd-client]
