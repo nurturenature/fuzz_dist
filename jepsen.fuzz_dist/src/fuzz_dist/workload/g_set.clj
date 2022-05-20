@@ -42,14 +42,15 @@
                         (repeat {:type :invoke, :f :read, :value nil})])
    :final-generator (gen/phases
                      ;; a simple sequence of transactions to help clarify end state and final reads
-                     (gen/log "Final adds in healed state...")
+                     (gen/log "Final adds/reads in healed state...")
                      (gen/sleep 1)
                      (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
                      (gen/sleep 1)
                      (gen/clients
                       (->>
-                       (map (fn [x] {:type :invoke, :f :add, :value (str :final "-" x)}) (drop 1 (range)))
-                       (gen/stagger (/ 1))
+                       (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str "final-" x)}) (drop 1 (range)))
+                                 (repeat {:type :invoke, :f :read, :value nil})])
+                       (gen/stagger (/ 2))
                        (gen/time-limit 10)))
                      (gen/sleep 1)
 
