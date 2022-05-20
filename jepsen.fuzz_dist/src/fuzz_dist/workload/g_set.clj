@@ -6,27 +6,36 @@
              [checker :as checker]
              [client :as client]
              [generator :as gen]]
-            [manifold.stream :as s]))
+            [manifold.stream :as s])
+  (:use [slingshot.slingshot :only [try+]]))
 
 (defrecord GSetClient [conn]
   client/Client
   (open! [this test node]
     (info node "Client/open" (fd-client/node-url node))
-    (assoc this :conn @(http/websocket-client (fd-client/node-url node))))
+    (try+
+     (assoc this :conn @(http/websocket-client (fd-client/node-url node)))
+     (catch Exception e
+       :g-set-client-open-exception)))
+  ;; TODO more specific Exception handling
 
   (setup! [this test])
 
   (invoke! [_ test op]
     (case (:f op)
-      :add (let [resp (fd-client/ws-invoke conn :g_set :add op)]
-             (case (:type resp)
-               "ok"   (assoc op :type :ok)
-               "fail" (assoc op :type :fail, :error (:error resp))))
+      :add  (let [resp (fd-client/ws-invoke conn :g_set :add op)]
+              (case (:type resp)
+                "ok"   (assoc op :type :ok)
+                "fail" (assoc op :type :fail, :error (:error resp))
+                ;; TODO: explicit "info"
+                (assoc op :type :info, :error (str resp))))
       :read (let [resp (fd-client/ws-invoke conn :g_set :read op)]
               (case (:type resp)
                 ;; sort returned set for human readability, json unorders
                 "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
-                "fail" (assoc op :type :fail, :error (:error resp))))))
+                "fail" (assoc op :type :fail, :error (:error resp))
+                ;; TODO: explicit "info"
+                (assoc op :type :info, :error (str resp))))))
 
   (teardown! [this test])
 
