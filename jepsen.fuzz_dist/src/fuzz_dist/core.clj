@@ -166,9 +166,11 @@
   "Takes parsed CLI options and constructs a sequence of test options, by
   combining all workloads, faults."
   [opts]
-  (let [faults                (:nemesis opts)
-        workloads             (:workload opts)
-        counts                (range (:test-count opts))]
+  (let [workloads (if-let [w (:workload opts)]
+                    [w]
+                    (keys workloads))
+        faults    (:nemesis opts)
+        counts    (range (:test-count opts))]
     (->> (for [w workloads, f faults, i counts]
            (assoc opts
                   :workload w
