@@ -65,7 +65,8 @@
 
     db/Process
     (start! [this test node]
-
+      ;; TODO: start/daemon/foreground?
+      ;; what about restarts? already started?
       (c/su
        (cu/start-daemon!
         {:chdir util/node-antidote
@@ -86,6 +87,8 @@
         :start)))
 
     (kill! [this test node]
+      ;; TODO also grepkill?
+      ;; move from teardown?
       (c/su
        (cu/stop-daemon! util/node-fuzz-dist-pid-file)
        (cu/stop-daemon! util/node-antidote-pid-file)))
