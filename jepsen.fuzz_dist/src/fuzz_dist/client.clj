@@ -23,7 +23,7 @@
     ;; TODO: catch timeouts
    (json/parse-string @(s/try-take! conn 60000) true)
     ;; TODO: catch timeouts
-   (catch Object e
+   (catch Exception e
      ;; TODO: smarter Exception -> info/fail, e.g. Connection refused is a fail
      (error (str "ws-invoke Exception:" e))
      {:type "info" :error (.getCause e)})))
