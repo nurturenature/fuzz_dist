@@ -54,16 +54,17 @@
 
     db/LogFiles
     (log-files [db test node]
-      {util/node-fuzz-dist-log-file "fuzz_dist_daemon"
-       "/root/fuzz_dist/tmp/log"    "fuzz_dist_log"
-       util/node-antidote-log-file  "antidote_daemon"
-       "/root/antidote/logger_logs" "antidote_logger_logs"
-       "/root/antidote/log"         "antidote_log"})
+    ;; Log file directories and names will change based on usage of start-daemon! 
+      {util/node-fuzz-dist-log-file            "fuzz_dist_daemon"
+       util/node-antidote-log-file             "antidote_daemon"
+       "/root/antidote/logger_logs/errors.log" "antidote_logger_errors"
+       "/root/antidote/logger_logs/info.log"   "antidote_logger_info"})
 
     db/Process
     (start! [this test node]
-      ;; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
-      ;; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
+    ;; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
+    ;; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
+    ;; (Also keep db/LogFiles in sync.)
       (if (cu/daemon-running? util/node-antidote-pid-file)
         :already-running
         (do
