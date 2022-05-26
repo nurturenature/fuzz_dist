@@ -29,16 +29,12 @@
 
       (db/start! this test node)
 
-      (Thread/sleep 15000))
+      (Thread/sleep 10000))
 
     (teardown! [this test node]
       (db/kill! this test node)
 
-      (Thread/sleep 5000)
-
       (c/su
-       (cu/grepkill! "antidote")
-       (cu/grepkill! "fuzz_dist")
        (c/exec :rm :-rf "/root/antidote")
        (c/exec :rm :-rf "/root/fuzz_dist")
        (c/exec :rm :-f  "/root/.erlang.cookie")))
@@ -52,7 +48,8 @@
         (info ":db :setup_primary return:"
               (fd-client/ws-invoke conn
                                    :db
-                                   :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")))
+                                   :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")
+                                   60000))
         (s/close! conn)))
 
     db/LogFiles
@@ -65,33 +62,41 @@
 
     db/Process
     (start! [this test node]
-      ;; TODO: start/daemon/foreground?
-      ;; what about restarts? already started?
-      (c/su
-       (cu/start-daemon!
-        {:chdir util/node-antidote
-         :env {:NODE_NAME (util/n-to-fqdn node "antidote")
-               :COOKIE "antidote"}
-         :logfile util/node-antidote-log-file
-         :pidfile util/node-antidote-pid-file}
-        "bin/antidote"
-        :start)
+      ;; TODO: confirm start/daemon/foreground Erlang/Elixir semantics and
+      ;; start-daemon :exec :match-process-name pid handling?
+      (if (cu/daemon-running? util/node-antidote-pid-file)
+        :already-running
+        (do
+          (c/su
+           (cu/start-daemon!
+            {:chdir util/node-antidote
+             :env {:NODE_NAME (util/n-to-fqdn node "antidote")
+                   :COOKIE "antidote"}
+             :logfile util/node-antidote-log-file
+             :pidfile util/node-antidote-pid-file}
+            "bin/antidote"
+            :start))
+          :restarted))
 
-       (cu/start-daemon!
-        {:chdir util/node-fuzz-dist
-         :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
-               :COOKIE "fuzz_dist"}
-         :logfile util/node-fuzz-dist-log-file
-         :pidfile util/node-fuzz-dist-pid-file}
-        "bin/fuzz_dist"
-        :start)))
+      (if (cu/daemon-running? util/node-fuzz-dist-pid-file)
+        :already-running
+        (do
+          (cu/start-daemon!
+           {:chdir util/node-fuzz-dist
+            :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
+                  :COOKIE "fuzz_dist"}
+            :logfile util/node-fuzz-dist-log-file
+            :pidfile util/node-fuzz-dist-pid-file}
+           "bin/fuzz_dist"
+           :start)
+          :restarted)))
 
     (kill! [this test node]
-      ;; TODO also grepkill?
-      ;; move from teardown?
       (c/su
        (cu/stop-daemon! util/node-fuzz-dist-pid-file)
-       (cu/stop-daemon! util/node-antidote-pid-file)))
+       (cu/grepkill! "antidote")
+       (cu/stop-daemon! util/node-antidote-pid-file)
+       (cu/grepkill! "fuzz_dist")))
 
     db/Pause
     (pause! [this test node]
