@@ -28,7 +28,7 @@
 
 (def partition-targets
   "Valid targets for partition nemesis operations."
-  #{:majority :minority-third :one :majority-ring :primaries})
+  #{:majority :minority-third :one :majorities-ring :primaries})
 
 (def pause-targets
   "Valid targets for pause nemesis operations."
