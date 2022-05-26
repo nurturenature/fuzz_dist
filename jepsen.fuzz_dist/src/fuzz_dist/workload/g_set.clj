@@ -9,6 +9,14 @@
             [manifold.stream :as s])
   (:use [slingshot.slingshot :only [try+]]))
 
+(defn g-set-adds [prefix]
+  (map (fn [x] {:type :invoke, :f :add, :value (str prefix x)}) (drop 1 (range))))
+
+(defn g-set-reads [final?]
+  (if final?
+    (repeat {:type :invoke, :f :read, :final? true, :value nil})
+    (repeat {:type :invoke, :f :read, :value nil})))
+
 (defrecord GSetClient [conn]
   client/Client
   (open! [this test node]
@@ -43,30 +51,35 @@
     (s/close! conn)))
 
 (defn workload
-  "Constructs a workload, {:client, :generator, :final-generator, :checker},
+  "Constructs a workload, {:client, :preamble-generator, :generator, :final-generator, :checker},
    for a g-set, given options from the CLI test constructor."
   [opts]
   {:client    (GSetClient. nil)
-   :generator (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str x)}) (drop 1 (range)))
-                        (repeat {:type :invoke, :f :read, :value nil})])
+   :preamble-generator (->> (g-set-adds "pre-")
+                            (gen/stagger (/ 2))
+                            (gen/time-limit 5)
+                            (gen/clients))
+   :generator (if (not (:linearizable? opts))
+                (gen/mix [(g-set-adds "")
+                          (g-set-reads false)])
+                (g-set-adds ""))
    :final-generator (gen/phases
                      ;; a simple sequence of transactions to help clarify end state and final reads
-                     (gen/log "Final adds/reads in healed state...")
-                     (gen/sleep 1)
-                     (gen/clients (gen/each-thread {:type :invoke :f :read :value nil}))
-                     (gen/sleep 1)
-                     (gen/clients
-                      (->>
-                       (gen/mix [(map (fn [x] {:type :invoke, :f :add, :value (str "final-" x)}) (drop 1 (range)))
-                                 (repeat {:type :invoke, :f :read, :value nil})])
-                       (gen/stagger (/ 2))
-                       (gen/time-limit 10)))
-                     (gen/sleep 1)
+                     (gen/log "Final adds in healed state...")
+                     (->>
+                      (g-set-adds "final-")
+                      (gen/stagger (/ 2))
+                      (gen/time-limit 10)
+                      (gen/clients))
 
                      (gen/log "Let database quiesce...")
                      (gen/sleep 10)
 
                      (gen/log "Final read...")
-                     (gen/sleep 1)
-                     (gen/clients (gen/each-thread {:type :invoke :f :read :value nil})))
-   :checker (checker/set-full)})
+                     (->>
+                      (g-set-reads true)
+                      (gen/once)
+                      (gen/each-thread)
+                      (gen/clients)))
+   :checker (checker/set-full
+             {:linearizable? (:linearizable? opts)})})
