@@ -10,7 +10,8 @@
             [jepsen.control
              [scp :as scp]
              [util :as cu]]
-            [manifold.stream :as s]))
+            [manifold.stream :as s])
+  (:use [slingshot.slingshot :only [throw+]]))
 
 (defn db
   "AntidoteDB."
@@ -41,15 +42,22 @@
 
     db/Primary
     (primaries [db test]
+      ;; Antidote doesn't have the concept of primary nodes.
+      ;; For Jepsen semantics, all Antidote nodes can be primaries.
       (:nodes test))
+
     (setup-primary! [db test node]
+      ;; Setup Antidote by clustering data centers.
+      (info (str "Clustering Antidote data centers: " (util/nodes-to-fqdn (:nodes test) "antidote")))
       (let [conn @(http/websocket-client (fd-client/node-url node))]
-      ;; TODO test type: :ok response
-        (info ":db :setup_primary return:"
-              (fd-client/ws-invoke conn
-                                   :db
-                                   :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")
-                                   60000))
+        (if (->>
+             (fd-client/ws-invoke conn
+                                  :db
+                                  :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")
+                                  60000)
+             (:type)
+             (not= "ok"))
+          (throw+ [:type ::setup-failed]))
         (s/close! conn)))
 
     db/LogFiles
@@ -82,15 +90,16 @@
       (if (cu/daemon-running? util/node-fuzz-dist-pid-file)
         :already-running
         (do
-          (cu/start-daemon!
-           {:chdir util/node-fuzz-dist
-            :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
-                  :COOKIE "fuzz_dist"}
-            :logfile util/node-fuzz-dist-log-file
-            :pidfile util/node-fuzz-dist-pid-file}
-           "bin/fuzz_dist"
-           :start)
-          :restarted)))
+          (c/su
+           (cu/start-daemon!
+            {:chdir util/node-fuzz-dist
+             :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
+                   :COOKIE "fuzz_dist"}
+             :logfile util/node-fuzz-dist-log-file
+             :pidfile util/node-fuzz-dist-pid-file}
+            "bin/fuzz_dist"
+            :start)
+           :restarted))))
 
     (kill! [this test node]
       (c/su
