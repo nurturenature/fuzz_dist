@@ -27,25 +27,21 @@
    :process   [:pause :kill]
    :all       [:partition :pause :kill]})
 
-(def partition-targets
-  "Valid targets for partition nemesis operations."
-  #{:majority :minority-third :one :majorities-ring :primaries})
-
-(def pause-targets
-  "Valid targets for pause nemesis operations."
-  #{:one})
-
-(def kill-targets
-  "Valid targets for kill nemesis operations."
-  #{:one})
-
 (def test-all-nemeses
   "A collection of partial options maps for various nemeses we want to run as a
   part of test-all."
   [{:nemesis nil}
    {:nemesis #{:partition}}
-   {:nemesis #{:pause :kill}}
-   {:nemesis #{:partition :pause :kill}}])
+   {:nemesis #{:pause}}
+   {:nemesis #{:kill}}])
+
+(def partition-targets
+  "Valid targets for partition nemesis operations."
+  #{:majority :minority-third :one :majorities-ring :primaries})
+
+(def db-targets
+  "Valid targets for DB nemesis operations."
+  #{:one :primaries :minority-third :majority :all})
 
 (defn combine-workload-package-generators
   "Constructs a test generator by combining workload and package generators
@@ -80,8 +76,8 @@
                         :nodes     (:nodes opts)
                         :faults    (:nemesis opts)
                         :partition {:targets (:partition-targets opts)}
-                        :pause     {:targets (:pause-targets opts)}
-                        :kill      {:targets (:kill-targets opts)}
+                        :pause     {:targets (:db-targets opts)}
+                        :kill      {:targets (:db-targets opts)}
                         :interval  (:nemesis-interval opts)})]
 
     (merge tests/noop-test
@@ -174,15 +170,10 @@
     :parse-fn parse-comma-kws
     :validate [(partial every? partition-targets) (cli/one-of partition-targets)]]
 
-   [nil "--pause-targets TARGETS" "A comma-separated list of nodes to target for process pauses; e.g. one,all"
-    :default (vec pause-targets)
+   [nil "--db-targets TARGETS" "A comma-separated list of nodes to target for db nemesus; e.g. one,all"
+    :default (vec db-targets)
     :parse-fn parse-comma-kws
-    :validate [(partial every? pause-targets) (cli/one-of pause-targets)]]
-
-   [nil "--kill-targets TARGETS" "A comma-separated list of nodes to target for process kills; e.g. one,all"
-    :default (vec kill-targets)
-    :parse-fn parse-comma-kws
-    :validate [(partial every? kill-targets) (cli/one-of kill-targets)]]
+    :validate [(partial every? db-targets) (cli/one-of db-targets)]]
 
    [nil "--rate HZ" "Target number of ops/sec"
     :default  10
