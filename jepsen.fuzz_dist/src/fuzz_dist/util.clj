@@ -1,9 +1,5 @@
 (ns fuzz-dist.util)
 
-(def control-root "/home/jsuttor")
-(def control-proj (str control-root "/" "projects"))
-(def control-antidote (str control-proj "/" "antidote"))
-(def control-fuzz-dist (str control-proj "/" "fuzz_dist" "/" "beam.fuzz_dist"))
 (def node-antidote "/root/antidote")
 (def node-antidote-log-file (str node-antidote "/" "antidote.daemon.log"))
 (def node-antidote-pid-file (str node-antidote "/" "antidote.daemon.pid"))
@@ -12,7 +8,7 @@
 (def node-fuzz-dist-pid-file (str node-fuzz-dist "/" "fuzz_dist.daemon.pid"))
 
 (defn n-to-fqdn [node app] (let [[n num] node]
-                             (str app "@" "192.168.122.10" num)))
+                             (str app "@" "n" num)))
 (defn nodes-to-fqdn [nodes app] (map #(n-to-fqdn % app) nodes))
 
 (defn rand-int-from-range
