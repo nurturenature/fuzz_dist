@@ -24,6 +24,7 @@
   "A map of special nemesis names to collections of faults"
   {:none      []
    :standard  [:partition]
+   :process   [:pause :kill]
    :all       [:partition :pause :kill]})
 
 (def partition-targets
@@ -38,13 +39,12 @@
   "Valid targets for kill nemesis operations."
   #{:one})
 
-(def standard-nemeses
+(def test-all-nemeses
   "A collection of partial options maps for various nemeses we want to run as a
   part of test-all."
   [{:nemesis nil}
    {:nemesis #{:partition}}
-   {:nemesis #{:pause}}
-   {:nemesis #{:kill}}
+   {:nemesis #{:pause :kill}}
    {:nemesis #{:partition :pause :kill}}])
 
 (defn combine-workload-package-generators
@@ -89,9 +89,14 @@
            {:name       (str "fuzz-dist"
                              "-Antidote"
                              "-" (count (:nodes opts)) "xdc"
-                             "-" (str (seq (:nemesis opts))  "-" (:nemesis-interval opts) "s")
+                             "-" (if (empty? (:nemesis opts))
+                                   (str ":no-faults")
+                                   (str (seq (:nemesis opts))  "-" (:nemesis-interval opts) "s"))
                              "-for-" (:time-limit opts) "s"
                              "-" (:rate opts) "ts"
+                             (if (:linearizable? opts)
+                               (str "-linearizable?=true")
+                               (str ""))
                              "-" workload-name)
             :os         debian/os
             :db         db
@@ -152,6 +157,7 @@
   [[nil "--linearizable? BOOLEAN" "Check for linearizability"
     :default false
     :parse-fn parse-boolean]
+
    [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
     :default (:standard special-nemeses)
     :parse-fn parse-nemesis-spec
@@ -184,19 +190,19 @@
     :validate validate-non-neg]])
 
 (defn all-tests
-  "Takes parsed CLI options and constructs a sequence of test options, by
-  combining all workloads, faults."
+  "Takes parsed CLI options and constructs a sequence of tests
+  using all standard nemeses."
   [opts]
   (let [workloads (if-let [w (:workload opts)]
                     [w]
                     (keys workloads))
-        faults    (:nemesis opts)
+        nemeses   test-all-nemeses
         counts    (range (:test-count opts))]
-    (->> (for [w workloads, f faults, i counts]
-           (assoc opts
-                  :workload w
-                  :nemesis #{f}))
-         (map fuzz-dist-test))))
+    (for [w workloads, n nemeses, l [false true], i counts]
+      (-> opts
+          (assoc :workload w, :linearizable? l)
+          (merge n)
+          fuzz-dist-test))))
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
