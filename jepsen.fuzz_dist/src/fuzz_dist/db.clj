@@ -62,8 +62,8 @@
 
     db/Process
     (start! [this test node]
-      ;; TODO: confirm start/daemon/foreground Erlang/Elixir semantics and
-      ;; start-daemon :exec :match-process-name pid handling?
+      ;; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
+      ;; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
       (if (cu/daemon-running? util/node-antidote-pid-file)
         :already-running
         (do
@@ -75,7 +75,7 @@
              :logfile util/node-antidote-log-file
              :pidfile util/node-antidote-pid-file}
             "bin/antidote"
-            :start))
+            :foreground))
           :restarted))
 
       (if (cu/daemon-running? util/node-fuzz-dist-pid-file)
