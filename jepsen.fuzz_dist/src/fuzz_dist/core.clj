@@ -53,13 +53,19 @@
   [opts workload package]
 
   (gen/phases
+   (gen/log "Peaceful preamble, no nemesis, minimal activity")
+   (:preamble-generator workload)
+
+   (gen/log "Workload with nemesis")
    (->> (:generator workload)
         (gen/stagger (/ (:rate opts)))
         (gen/nemesis (:generator package))
         (gen/time-limit (:time-limit opts)))
 
+   (gen/log "Final nemesis")
    (gen/nemesis (:final-generator package))
 
+   (gen/log "Final workload")
    (:final-generator workload)))
 
 (defn fuzz-dist-test
@@ -101,7 +107,11 @@
                           :exceptions (checker/unhandled-exceptions)
                           ;; TODO log file patterns
                           ;; :logs       (checker/log-file-pattern #"ERROR" ".log")
-                          })})))
+                          })
+            :logging    {:overrides
+                         ;; TODO: turn off SLF4J logging
+                         {"io.netty.util.internal.InternalThreadLocalMap" :off
+                          "io.netty.util.internal.logging.InternalLoggerFactory" :off}}})))
 
 (def validate-non-neg
   [#(and (number? %) (not (neg? %))) "Must be non-negative"])
@@ -123,15 +133,26 @@
 
 (def test-opt-spec
   "Options for tests."
-  [["-w" "--workload NAME" "What workload to run."
+  [[nil "--db-dir DIRECTORY" "Directory with database release"
+    :default "~/projects/antidote/_build/default/rel/antidote"
+    ;; :parse-fn read-string
+    ]
+
+   [nil "--fuzz-dist-dir DIRECTORY" "Directory with fuzz_dist release"
+    :default "~/projects/fuzz_dist/beam.fuzz_dist/_build/prod/rel/fuzz_dist"
+    ;; :parse-fn read-string
+    ]
+   ["-w" "--workload NAME" "What workload to run."
     :default :g-set
     :parse-fn keyword
     :validate [workloads (cli/one-of workloads)]]])
 
 (def opt-spec
   "Additional command line options."
-
-  [[nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
+  [[nil "--linearizable? BOOLEAN" "Check for linearizability"
+    :default false
+    :parse-fn parse-boolean]
+   [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
     :default (:standard special-nemeses)
     :parse-fn parse-nemesis-spec
     :validate [(partial every? (into nemeses (keys special-nemeses)))

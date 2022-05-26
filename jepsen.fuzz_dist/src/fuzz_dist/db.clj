@@ -18,13 +18,13 @@
   (reify db/DB
     (setup! [this test node]
       ;; cp antidote from control to node to install
-      (scp/scp! {:port 22 :private-key-path (str util/control-root "/" ".ssh/id_rsa")}
-                [(str util/control-antidote "/" "_build/default/rel/antidote")]
+      (scp/scp! {:port 22 :private-key-path "~/.ssh/id_rsa"}
+                [(:db-dir test)]
                 (str "root" "@" node ":" "/root"))
 
       ;; cp fuzz_dist from control to node to install
-      (scp/scp! {:port 22 :private-key-path (str util/control-root "/" ".ssh/id_rsa")}
-                [(str util/control-fuzz-dist "/" "_build/prod/rel/fuzz_dist")]
+      (scp/scp! {:port 22 :private-key-path "~/.ssh/id_rsa"}
+                [(:fuzz-dist-dir test)]
                 (str "root" "@" node ":" "/root"))
 
       (db/start! this test node)
