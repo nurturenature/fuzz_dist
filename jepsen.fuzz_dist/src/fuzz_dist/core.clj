@@ -87,11 +87,11 @@
                              "-" (count (:nodes opts)) "xdc"
                              "-" (if (empty? (:nemesis opts))
                                    (str ":no-faults")
-                                   (str (seq (:nemesis opts))  "-" (:nemesis-interval opts) "s"))
+                                   (str (seq (:nemesis opts))  "," (:nemesis-interval opts) "s"))
                              "-for-" (:time-limit opts) "s"
                              "-" (:rate opts) "ts"
                              (if (:linearizable? opts)
-                               (str "-linearizable?=true")
+                               (str "-linearizable")
                                (str ""))
                              "-" workload-name)
             :os         debian/os
