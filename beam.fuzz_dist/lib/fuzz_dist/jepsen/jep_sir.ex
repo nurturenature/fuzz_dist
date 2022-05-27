@@ -20,7 +20,7 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   @callback g_set_add(antidote_conn :: pid(), value :: binary()) :: :ok
   @callback g_set_read(antidote_conn :: pid()) :: {:ok, binary()}
-  @callback setup_primary(antidote_conn :: pid(), nodes :: list()) :: :ok
+  @callback setup_primary(topology :: atom(), nodes :: nonempty_list()) :: :ok
 
   @impl true
   def init(_args) do
@@ -62,10 +62,10 @@ defmodule FuzzDist.Jepsen.JepSir do
 
           %{type: :ok, value: value}
 
-        {"Db", "setup_primary", nodes} ->
-          start_time = Telemetry.start(:setup_primary, %{nodes: nodes})
+        {"Db", "setup_primary", %{topology: topology, nodes: nodes}} ->
+          start_time = Telemetry.start(:setup_primary, %{topology: topology, nodes: nodes})
 
-          :ok = Jepsen.Antidote.setup_primary(antidote_conn, nodes)
+          :ok = Jepsen.Antidote.setup_primary(String.to_atom(topology), nodes)
 
           Telemetry.stop(:setup_primary, start_time)
 
