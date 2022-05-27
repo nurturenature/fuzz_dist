@@ -1,13 +1,11 @@
 (ns fuzz-dist.workload.g-set
-  (:require [aleph.http :as http]
-            [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer :all]
             [fuzz-dist.client :as fd-client]
             [jepsen
              [checker :as checker]
              [client :as client]
              [generator :as gen]]
-            [manifold.stream :as s])
-  (:use [slingshot.slingshot :only [try+]]))
+            [manifold.stream :as s]))
 
 (defn g-set-adds [prefix]
   (map (fn [x] {:type :invoke, :f :add, :value (str prefix x)}) (drop 1 (range))))
@@ -20,12 +18,8 @@
 (defrecord GSetClient [conn]
   client/Client
   (open! [this test node]
-    (info node "Client/open" (fd-client/node-url node))
-    (try+
-     (assoc this :conn @(http/websocket-client (fd-client/node-url node)))
-     (catch Exception e
-       :g-set-client-open-exception)))
-  ;; TODO more specific Exception handling
+    (info "GSetClient/open" (fd-client/node-url node))
+    (assoc this :conn (fd-client/get-ws-conn fd-client/node-url node)))
 
   (setup! [this test])
 
@@ -35,14 +29,14 @@
               (case (:type resp)
                 "ok"   (assoc op :type :ok)
                 "fail" (assoc op :type :fail, :error (:error resp))
-                ;; TODO: explicit "info"
+                "info" (assoc op :type :info, :error (:error resp))
                 (assoc op :type :info, :error (str resp))))
       :read (let [resp (fd-client/ws-invoke conn :g_set :read op)]
               (case (:type resp)
                 ;; sort returned set for human readability, json unorders
                 "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
                 "fail" (assoc op :type :fail, :error (:error resp))
-                ;; TODO: explicit "info"
+                "info" (assoc op :type :info, :error (:error resp))
                 (assoc op :type :info, :error (str resp))))))
 
   (teardown! [this test])
