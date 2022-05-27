@@ -1,8 +1,7 @@
 (ns fuzz-dist.db
   (:require [clojure.tools.logging :refer :all]
             [fuzz-dist
-             [client :as fd-client]
-             [util :as util]]
+             [client :as fd-client]]
             [jepsen
              [db :as db]
              [control :as c]]
@@ -11,6 +10,21 @@
              [util :as cu]]
             [manifold.stream :as s])
   (:use [slingshot.slingshot :only [throw+]]))
+
+(def node-antidote          "/root/antidote")
+(def antidote-log-file      "antidote.daemon.log")
+(def node-antidote-log-file (str node-antidote "/" antidote-log-file))
+(def node-antidote-pid-file (str node-antidote "/" "antidote.daemon.pid"))
+(def node-fuzz-dist          "/root/fuzz_dist")
+(def fuzz-dist-log-file      "fuzz_dist.daemon.log")
+(def node-fuzz-dist-log-file (str node-fuzz-dist "/" fuzz-dist-log-file))
+(def node-fuzz-dist-pid-file (str node-fuzz-dist "/" "fuzz_dist.daemon.pid"))
+
+(defn n-to-fqdn
+  "Erlang wants at least one . in a fully qualified hostname,
+  so add one to the end. Assuming we are in a LXC/Docker environment with names like n1."
+  [node app] (str app "@" node "."))
+(defn nodes-to-fqdn [nodes app] (map #(n-to-fqdn % app) nodes))
 
 (defn db
   "AntidoteDB."
@@ -47,12 +61,14 @@
 
     (setup-primary! [db test node]
       ;; Setup Antidote by clustering data centers.
-      (info "Clustering Antidote data centers: " (util/nodes-to-fqdn (:nodes test) "antidote"))
+      (info "Clustering Antidote data centers: " {:topology (:topology test)
+                                                  :nodes (nodes-to-fqdn (:nodes test) "antidote")})
       (let [conn (fd-client/get-ws-conn fd-client/node-url node)]
         (if (->>
              (fd-client/ws-invoke conn
                                   :db
-                                  :setup_primary (util/nodes-to-fqdn (:nodes test) "antidote")
+                                  :setup_primary {:topology (:topology test)
+                                                  :nodes (nodes-to-fqdn (:nodes test) "antidote")}
                                   60000)
              (:type)
              (not= "ok"))
@@ -62,49 +78,49 @@
     db/LogFiles
     (log-files [db test node]
     ;; Log file directories and names will change based on usage of start-daemon! 
-      {util/node-fuzz-dist-log-file            "fuzz_dist_daemon"
-       util/node-antidote-log-file             "antidote_daemon"
-       "/root/antidote/logger_logs/errors.log" "antidote_logger_errors"
-       "/root/antidote/logger_logs/info.log"   "antidote_logger_info"})
+      {node-fuzz-dist-log-file            "fuzz_dist_daemon"
+       node-antidote-log-file             "antidote_daemon"
+       (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors"
+       (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info"})
 
     db/Process
     (start! [this test node]
     ;; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
     ;; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
     ;; (Also keep db/LogFiles in sync.)
-      (if (cu/daemon-running? util/node-antidote-pid-file)
+      (if (cu/daemon-running? node-antidote-pid-file)
         :already-running
         (do
           (c/su
            (cu/start-daemon!
-            {:chdir util/node-antidote
-             :env {:NODE_NAME (util/n-to-fqdn node "antidote")
+            {:chdir node-antidote
+             :env {:NODE_NAME (n-to-fqdn node "antidote")
                    :COOKIE "antidote"}
-             :logfile util/node-antidote-log-file
-             :pidfile util/node-antidote-pid-file}
+             :logfile node-antidote-log-file
+             :pidfile node-antidote-pid-file}
             "bin/antidote"
             :foreground))
           :restarted))
 
-      (if (cu/daemon-running? util/node-fuzz-dist-pid-file)
+      (if (cu/daemon-running? node-fuzz-dist-pid-file)
         :already-running
         (do
           (c/su
            (cu/start-daemon!
-            {:chdir util/node-fuzz-dist
-             :env {:NODE_NAME (util/n-to-fqdn node "fuzz_dist")
+            {:chdir node-fuzz-dist
+             :env {:NODE_NAME (n-to-fqdn node "fuzz_dist")
                    :COOKIE "fuzz_dist"}
-             :logfile util/node-fuzz-dist-log-file
-             :pidfile util/node-fuzz-dist-pid-file}
+             :logfile node-fuzz-dist-log-file
+             :pidfile node-fuzz-dist-pid-file}
             "bin/fuzz_dist"
             :start)
            :restarted))))
 
     (kill! [this test node]
       (c/su
-       (cu/stop-daemon! util/node-fuzz-dist-pid-file)
+       (cu/stop-daemon! node-fuzz-dist-pid-file)
        (cu/grepkill! :antidote)
-       (cu/stop-daemon! util/node-antidote-pid-file)
+       (cu/stop-daemon! node-antidote-pid-file)
        (cu/grepkill! :fuzz_dist)))
 
     db/Pause
