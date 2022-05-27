@@ -106,11 +106,11 @@
                           :timeline   (timeline/html)
                           :stats      (checker/stats)
                           :exceptions (checker/unhandled-exceptions)
-                          ;; TODO log file patterns
-                          ;; :logs       (checker/log-file-pattern #"ERROR" ".log")
-                          })
+                          ;; TODO confirm pattern matching with actual errors in log file(s)
+                          :logs-antidote  (checker/log-file-pattern #"error:"  util/node-antidote-log-file)
+                          :logs-fuzz-dist (checker/log-file-pattern #"[error]" util/node-fuzz-dist-log-file)})
             :logging    {:overrides
-                         ;; TODO: turn off SLF4J logging
+                         ;; TODO: how to turn off SLF4J logging?
                          {"io.netty.util.internal.InternalThreadLocalMap" :off
                           "io.netty.util.internal.logging.InternalLoggerFactory" :off}}})))
 
