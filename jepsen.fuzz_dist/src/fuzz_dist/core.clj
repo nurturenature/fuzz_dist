@@ -41,7 +41,7 @@
 
 (def db-targets
   "Valid targets for DB nemesis operations."
-  #{:one :primaries :minority-third :majority :all})
+  #{:one :primaries :minority-third :minority :majority :all})
 
 (defn combine-workload-package-generators
   "Constructs a test generator by combining workload and package generators
@@ -87,11 +87,11 @@
                              "-" (count (:nodes opts)) "xdc"
                              "-" (if (empty? (:nemesis opts))
                                    (str ":no-faults")
-                                   (str (seq (:nemesis opts))  "-" (:nemesis-interval opts) "s"))
+                                   (str (seq (:nemesis opts))  "," (:nemesis-interval opts) "s"))
                              "-for-" (:time-limit opts) "s"
                              "-" (:rate opts) "ts"
                              (if (:linearizable? opts)
-                               (str "-linearizable?=true")
+                               (str "-linearizable")
                                (str ""))
                              "-" workload-name)
             :os         debian/os

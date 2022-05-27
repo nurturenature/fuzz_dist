@@ -1,6 +1,5 @@
 (ns fuzz-dist.db
-  (:require [aleph.http :as http]
-            [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer :all]
             [fuzz-dist
              [client :as fd-client]
              [util :as util]]
@@ -48,8 +47,8 @@
 
     (setup-primary! [db test node]
       ;; Setup Antidote by clustering data centers.
-      (info (str "Clustering Antidote data centers: " (util/nodes-to-fqdn (:nodes test) "antidote")))
-      (let [conn @(http/websocket-client (fd-client/node-url node))]
+      (info "Clustering Antidote data centers: " (util/nodes-to-fqdn (:nodes test) "antidote"))
+      (let [conn (fd-client/get-ws-conn fd-client/node-url node)]
         (if (->>
              (fd-client/ws-invoke conn
                                   :db
@@ -104,9 +103,9 @@
     (kill! [this test node]
       (c/su
        (cu/stop-daemon! util/node-fuzz-dist-pid-file)
-       (cu/grepkill! "antidote")
+       (cu/grepkill! :antidote)
        (cu/stop-daemon! util/node-antidote-pid-file)
-       (cu/grepkill! "fuzz_dist")))
+       (cu/grepkill! :fuzz_dist)))
 
     db/Pause
     (pause! [this test node]
