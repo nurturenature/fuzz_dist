@@ -104,9 +104,9 @@
     (kill! [this test node]
       (c/su
        (cu/stop-daemon! util/node-fuzz-dist-pid-file)
-       (cu/grepkill! "antidote")
+       (cu/grepkill! :antidote)
        (cu/stop-daemon! util/node-antidote-pid-file)
-       (cu/grepkill! "fuzz_dist")))
+       (cu/grepkill! :fuzz_dist)))
 
     db/Pause
     (pause! [this test node]
