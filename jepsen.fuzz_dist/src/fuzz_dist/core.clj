@@ -41,7 +41,7 @@
 
 (def db-targets
   "Valid targets for DB nemesis operations."
-  #{:one :primaries :minority-third :majority :all})
+  #{:one :primaries :minority-third :minority :majority :all})
 
 (defn combine-workload-package-generators
   "Constructs a test generator by combining workload and package generators
