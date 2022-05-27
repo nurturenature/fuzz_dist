@@ -43,6 +43,12 @@
   "Valid targets for DB nemesis operations."
   #{:one :primaries :minority-third :minority :majority :all})
 
+(def topologies
+  "Topologies that can be tested.
+  :dcs   topology {dc {n}, dc {n}, ...} to test inter-dc protocol
+  :nodes topology {dc {n, n, ...}}      to test intra-dc protocol"
+  #{:dcs :nodes})
+
 (defn combine-workload-package-generators
   "Constructs a test generator by combining workload and package generators
    configured with CLI test opts"
@@ -64,6 +70,24 @@
    (gen/log "Final workload")
    (:final-generator workload)))
 
+(defn test-name
+  "Meaningful test name."
+  [opts]
+  (str "fuzz-dist"
+       "-Antidote"
+       "-" (case (:topology opts)
+             :dcs   (str (count (:nodes opts)) "xdcn1")
+             :nodes (str "1" "xdcn" (count (:nodes opts))))
+       "-" (if (empty? (:nemesis opts))
+             (str ":no-faults")
+             (str (seq (:nemesis opts))  "," (:nemesis-interval opts) "s"))
+       "-for-" (:time-limit opts) "s"
+       "-" (:rate opts) "ts"
+       (if (:linearizable? opts)
+         (str "-linearizable")
+         (str ""))
+       "-" (:workload opts)))
+
 (defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
                       :concurrency, ...), constructs a test map."
@@ -82,18 +106,7 @@
 
     (merge tests/noop-test
            opts
-           {:name       (str "fuzz-dist"
-                             "-Antidote"
-                             "-" (count (:nodes opts)) "xdc"
-                             "-" (if (empty? (:nemesis opts))
-                                   (str ":no-faults")
-                                   (str (seq (:nemesis opts))  "," (:nemesis-interval opts) "s"))
-                             "-for-" (:time-limit opts) "s"
-                             "-" (:rate opts) "ts"
-                             (if (:linearizable? opts)
-                               (str "-linearizable")
-                               (str ""))
-                             "-" workload-name)
+           {:name       (test-name opts)
             :os         debian/os
             :db         db
             :client     (:client workload)
@@ -107,8 +120,8 @@
                           :stats      (checker/stats)
                           :exceptions (checker/unhandled-exceptions)
                           ;; TODO confirm pattern matching with actual errors in log file(s)
-                          :logs-antidote  (checker/log-file-pattern #"error:"  util/node-antidote-log-file)
-                          :logs-fuzz-dist (checker/log-file-pattern #"[error]" util/node-fuzz-dist-log-file)})
+                          :logs-antidote  (checker/log-file-pattern #"error:"  db/antidote-log-file)
+                          :logs-fuzz-dist (checker/log-file-pattern #"[error]" db/fuzz-dist-log-file)})
             :logging    {:overrides
                          ;; TODO: how to turn off SLF4J logging?
                          {"io.netty.util.internal.InternalThreadLocalMap" :off
@@ -178,7 +191,12 @@
    [nil "--rate HZ" "Target number of ops/sec"
     :default  10
     :parse-fn read-string
-    :validate validate-non-neg]])
+    :validate validate-non-neg]
+
+   [nil "--topology TOPOLOGY" "Topology of cluster, multiple dcs or single dc with multiple nodes"
+    :default  :dcs
+    :parse-fn keyword
+    :validate [topologies (cli/one-of topologies)]]])
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of tests
