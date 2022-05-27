@@ -41,7 +41,21 @@ defmodule FuzzDist.Jepsen.Antidote do
   end
 
   @impl true
-  def setup_primary(_antidote_conn, nodes) do
+  def setup_primary(:nodes, nodes) when is_list(nodes) and length(nodes) != 0 do
+    [_name, host] = String.split(hd(nodes), "@")
+    {:ok, antidote_conn} = :antidotec_pb_socket.start_link(String.to_charlist(host), 8087)
+
+    :ok = :antidotec_pb_management.create_dc(antidote_conn, nodes)
+
+    {:ok, descriptor} = :antidotec_pb_management.get_connection_descriptor(antidote_conn)
+
+    :ok = :antidotec_pb_management.connect_to_dcs(antidote_conn, [descriptor])
+
+    :ok = :antidotec_pb_socket.stop(antidote_conn)
+  end
+
+  @impl true
+  def setup_primary(:dcs, nodes) when is_list(nodes) and length(nodes) != 0 do
     nodes_to_conns =
       Enum.reduce(nodes, %{}, fn antidote_node, acc ->
         [_name, host] = String.split(antidote_node, "@")
