@@ -50,7 +50,7 @@
   [opts]
   {:client    (GSetClient. nil)
    :preamble-generator (->> (g-set-adds "pre-")
-                            (gen/stagger (/ 2))
+                            (gen/stagger (/ (count (:nodes opts))))
                             (gen/time-limit 5)
                             (gen/clients))
    :generator (if (not (:linearizable? opts))
@@ -62,7 +62,7 @@
                      (gen/log "Final adds in healed state...")
                      (->>
                       (g-set-adds "final-")
-                      (gen/stagger (/ 2))
+                      (gen/stagger (/ 1))
                       (gen/time-limit 10)
                       (gen/clients))
 
