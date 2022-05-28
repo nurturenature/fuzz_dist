@@ -168,7 +168,6 @@
     :parse-fn parse-boolean]
 
    [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
-    :default (:standard special-nemeses)
     :parse-fn parse-nemesis-spec
     :validate [(partial every? (into nemeses (keys special-nemeses)))
                (str (cli/one-of nemeses) ", or " (cli/one-of special-nemeses))]]
@@ -205,7 +204,9 @@
   (let [workloads (if-let [w (:workload opts)]
                     [w]
                     (keys workloads))
-        nemeses   test-all-nemeses
+        nemeses   (if (nil? (:nemesis opts))
+                    test-all-nemeses
+                    [{:nemesis (:nemesis opts)}])
         counts    (range (:test-count opts))]
     (for [w workloads, n nemeses, l [false true], i counts]
       (-> opts
