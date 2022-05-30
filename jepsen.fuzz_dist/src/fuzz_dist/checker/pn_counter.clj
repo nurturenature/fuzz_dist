@@ -38,6 +38,12 @@
   map with :valid? true if all reads marked :final? are in the acceptable set.
   Returns the acceptable set, encoded as a sequence of [lower upper] closed
   ranges."
+  ; TODO
+  ;   :linearizable? or only check :final? reads
+  ;   try keeping track of current & possible counter value to
+  ;     verify valid read
+  ;     track read staleness, delta from current/possible, chart
+  ;   bounded counter
   []
   (reify checker/Checker
     (check [this test history opts]

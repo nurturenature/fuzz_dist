@@ -66,6 +66,46 @@ defmodule FuzzDist.Telemetry do
 
       * `%{}`
 
+  * `[:fuzz_dist, :pn_counter_read, :start]` - Executed on receipt of Jepsen :read operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `%{}`
+
+  * `[:fuzz_dist, :pn_counter_read, :stop]` - Executed on completion of read before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the read.
+
+    #### Metadata:
+
+      * :value - Value returned by read.
+
+  * `[:fuzz_dist, :pn_counter_add, :start]` - Executed on receipt of Jepsen :add operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `value`: - The value to be added
+
+  * `[:fuzz_dist, :pn_counter_add, :stop]` - Executed on completion of add before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the read.
+
+    #### Metadata:
+
+      * `%{}`
+
   * `[:fuzz_dist, :setup_primary, :start]` - Executed on receipt of Jepsen :setup_primary operation.
 
     #### Measurements
@@ -114,6 +154,10 @@ defmodule FuzzDist.Telemetry do
           [:fuzz_dist, :g_set_add, :stop],
           [:fuzz_dist, :g_set_read, :start],
           [:fuzz_dist, :g_set_read, :stop],
+          [:fuzz_dist, :pn_counter_add, :start],
+          [:fuzz_dist, :pn_counter_add, :stop],
+          [:fuzz_dist, :pn_counter_read, :start],
+          [:fuzz_dist, :pn_counter_read, :stop],
           [:fuzz_dist, :setup_primary, :start],
           [:fuzz_dist, :setup_primary, :stop]
         ],

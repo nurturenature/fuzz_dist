@@ -15,6 +15,7 @@ defmodule FuzzDist.Jepsen.Antidote do
   require Logger
 
   @g_set_obj {"test_g_set", :antidote_crdt_set_aw, "test_bucket"}
+  @pn_counter_obj {"test_pn_counter", :antidote_crdt_counter_pn, "test_bucket"}
 
   @impl true
   # TODO: oh dialyzer, sigh...
@@ -36,6 +37,30 @@ defmodule FuzzDist.Jepsen.Antidote do
 
     updated_g_set = :antidotec_set.add(g_set_value, :antidotec_set.new())
     updated_ops = :antidotec_set.to_ops(@g_set_obj, updated_g_set)
+
+    :ok = :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans)
+  end
+
+  @impl true
+  def pn_counter_read(antidote_conn) do
+    {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
+
+    {:ok, [pn_counter]} =
+      :antidotec_pb.read_objects(antidote_conn, [@pn_counter_obj], static_trans)
+
+    pn_counter_value = :antidotec_counter.value(pn_counter)
+
+    {:ok, pn_counter_value}
+  end
+
+  @impl true
+  # TODO: oh dialyzer, sigh...
+  @dialyzer {:nowarn_function, pn_counter_add: 2}
+  def pn_counter_add(antidote_conn, pn_counter_value) do
+    {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
+
+    updated_pn_counter = :antidotec_counter.increment(pn_counter_value, :antidotec_counter.new())
+    updated_ops = :antidotec_counter.to_ops(@pn_counter_obj, updated_pn_counter)
 
     :ok = :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans)
   end

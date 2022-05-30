@@ -2,14 +2,17 @@
   "An eventually-consistent counter which supports increments and decrements.
   Validates that the final read on each node has a value which is the sum of
   all known (or possible) increments and decrements."
-  (:require [fuzz-dist
-             [checker.pn-counter :as pn-counter]
-             [client :as fd-client]]
-            [jepsen.generator :as gen]
+  (:require [clojure.tools.logging :refer :all]
+            [fuzz-dist.client :as fd-client]
+            [fuzz-dist.checker.pn-counter :as pn-counter]
+            [jepsen
+             [client :as client]
+             [generator :as gen]]
+            [manifold.stream :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn pn-counter-adds []
-  (fn [] {:type :invoke, :f :add, :value (- (rand-int 10) 5)}))
+  (fn [] {:type :invoke, :f :add, :value (- (rand-int 11) 5)}))
 
 (defn pn-counter-reads [final?]
   (if final?
@@ -34,7 +37,7 @@
                 (assoc op :type :info, :error (str resp))))
       :read (let [resp (fd-client/ws-invoke conn :pn_counter :read op)]
               (case (:type resp)
-                "ok"   (assoc op :type :ok,   :value (:value resp))
+                "ok"   (assoc op :type :ok,   :value (long (:value resp)))
                 "fail" (assoc op :type :fail, :error (:error resp))
                 "info" (assoc op :type :info, :error (:error resp))
                 (assoc op :type :info, :error (str resp))))))
