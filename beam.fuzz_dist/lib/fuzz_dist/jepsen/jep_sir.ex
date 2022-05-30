@@ -22,6 +22,9 @@ defmodule FuzzDist.Jepsen.JepSir do
   @callback g_set_read(antidote_conn :: pid()) :: {:ok, binary()}
   @callback setup_primary(topology :: atom(), nodes :: nonempty_list()) :: :ok
 
+  @callback pn_counter_add(antidote_conn :: pid(), value :: integer()) :: :ok
+  @callback pn_counter_read(antidote_conn :: pid()) :: {:ok, integer()}
+
   @impl true
   def init(_args) do
     # blocking, crash, raise in init/1, is intentional
@@ -59,6 +62,24 @@ defmodule FuzzDist.Jepsen.JepSir do
 
           # sort for human readability, json unorders
           Telemetry.stop(:g_set_read, start_time, %{value: Enum.sort(value)})
+
+          %{type: :ok, value: value}
+
+        {"PnCounter", "add", %{value: value}} ->
+          start_time = Telemetry.start(:pn_counter_add, %{value: value})
+
+          :ok = Jepsen.Antidote.pn_counter_add(antidote_conn, value)
+
+          Telemetry.stop(:pn_counter_add, start_time)
+
+          %{type: :ok}
+
+        {"PnCounter", "read", _} ->
+          start_time = Telemetry.start(:pn_counter_read)
+
+          {:ok, value} = Jepsen.Antidote.pn_counter_read(antidote_conn)
+
+          Telemetry.stop(:pn_counter_read, start_time, %{value: value})
 
           %{type: :ok, value: value}
 
