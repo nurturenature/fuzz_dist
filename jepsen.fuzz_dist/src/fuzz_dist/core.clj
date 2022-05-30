@@ -2,7 +2,9 @@
   (:require
    [clojure.string :as str]
    [fuzz-dist.db :as db]
-   [fuzz-dist.workload [g-set :as g-set]]
+   [fuzz-dist.workload
+    [g-set :as g-set]
+    [pn-counter :as pn-counter]]
    [jepsen
     [cli :as cli]
     [checker :as checker]
@@ -14,7 +16,8 @@
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
-  {:g-set g-set/workload})
+  {:g-set      g-set/workload
+   :pn-counter pn-counter/workload})
 
 (def nemeses
   "The types of faults our nemesis can produce"
