@@ -18,15 +18,19 @@ defmodule FuzzDist.Jepsen.Antidote do
   @pn_counter_obj {"test_pn_counter", :antidote_crdt_counter_pn, "test_bucket"}
 
   @impl true
-  # TODO: oh dialyzer, sigh...
-  @dialyzer {:nowarn_function, g_set_read: 1}
   def g_set_read(antidote_conn) do
     {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
 
     {:ok, [g_set]} = :antidotec_pb.read_objects(antidote_conn, [@g_set_obj], static_trans)
     g_set_value = :antidotec_set.value(g_set)
 
-    {:ok, g_set_value}
+    return_value =
+      Enum.map(
+        g_set_value,
+        &:erlang.binary_to_term/1
+      )
+
+    {:ok, return_value}
   end
 
   @impl true
@@ -35,7 +39,7 @@ defmodule FuzzDist.Jepsen.Antidote do
   def g_set_add(antidote_conn, g_set_value) do
     {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
 
-    updated_g_set = :antidotec_set.add(g_set_value, :antidotec_set.new())
+    updated_g_set = :antidotec_set.add(:erlang.term_to_binary(g_set_value), :antidotec_set.new())
     updated_ops = :antidotec_set.to_ops(@g_set_obj, updated_g_set)
 
     :ok = :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans)
