@@ -58,9 +58,6 @@
   [opts workload package]
 
   (gen/phases
-   (gen/log "Peaceful preamble, no nemesis, minimal activity")
-   (:preamble-generator workload)
-
    (gen/log "Workload with nemesis")
    (->> (:generator workload)
         (gen/stagger (/ (:rate opts)))

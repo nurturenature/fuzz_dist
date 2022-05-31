@@ -7,8 +7,8 @@
              [generator :as gen]]
             [manifold.stream :as s]))
 
-(defn g-set-adds [prefix]
-  (map (fn [x] {:type :invoke, :f :add, :value (str prefix x)}) (drop 1 (range))))
+(defn g-set-adds []
+  (map (fn [x] {:type :invoke, :f :add, :value x}) (drop 1 (range))))
 
 (defn g-set-reads [final?]
   (if final?
@@ -45,27 +45,15 @@
     (s/close! conn)))
 
 (defn workload
-  "Constructs a workload, {:client, :preamble-generator, :generator, :final-generator, :checker},
+  "Constructs a workload, {:client, :generator, :final-generator, :checker},
    for a g-set, given options from the CLI test constructor."
   [opts]
   {:client    (GSetClient. nil)
-   :preamble-generator (->> (g-set-adds "pre-")
-                            (gen/stagger (/ (count (:nodes opts))))
-                            (gen/time-limit 5)
-                            (gen/clients))
    :generator (if (not (:linearizable? opts))
-                (gen/mix [(g-set-adds "")
+                (gen/mix [(g-set-adds)
                           (g-set-reads false)])
-                (g-set-adds ""))
+                (g-set-adds))
    :final-generator (gen/phases
-                     ;; a simple sequence of transactions to help clarify end state and final reads
-                     (gen/log "Final adds in healed state...")
-                     (->>
-                      (g-set-adds "final-")
-                      (gen/stagger (/ 1))
-                      (gen/time-limit 10)
-                      (gen/clients))
-
                      (gen/log "Let database quiesce...")
                      (gen/sleep 10)
 

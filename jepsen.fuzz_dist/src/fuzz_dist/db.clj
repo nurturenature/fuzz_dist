@@ -61,8 +61,8 @@
 
     (setup-primary! [db test node]
       ;; Setup Antidote by clustering data centers.
-      (info "Clustering Antidote data centers: " {:topology (:topology test)
-                                                  :nodes (nodes-to-fqdn (:nodes test) "antidote")})
+      (info "Clustering Antidote: " {:topology (:topology test)
+                                     :nodes (nodes-to-fqdn (:nodes test) "antidote")})
       (let [conn (fd-client/get-ws-conn fd-client/node-url node)]
         (if (->>
              (fd-client/ws-invoke conn
