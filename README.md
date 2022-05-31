@@ -126,23 +126,16 @@ Many thanks to @Aphyr and https://jepsen.io for https://github.com/jepsen-io/jep
 `fuzz_dist` is designed to run in the same default environment that Jepsen
 core develops/tests with: https://github.com/jepsen-io/jepsen#lxc
 
-During local development, a directory structure of
-```
-$project/antidote   # with make rel
-$project/fuzz_dist
-```
-is assumed and configured in `fuzz_dist/jepsen.fuzz_dist/util.clj`
-
 This is an initial setup and a fuller solution is under development,
 https://github.com/nurturenature/fuzz_dist/issues/38.
 
 ```bash
 cd $project/fuzz_dist/jepsen.fuzz_dist
 # run a random test with default values
-lein run test
+lein run test --db-dir $path --fuzz-dist-dir $path
 
 # run a series of tests iterating through default values
-lein run test-all
+lein run test-all --db-dir $path --fuzz-dist-dir $path
 
 # launch webserver to interact with, http://localhost:8080,
 # test results, leave terminal open to leave webserver running
