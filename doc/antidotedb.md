@@ -2,13 +2,13 @@
 
 ## Configuration
 
-- git AntidoteDB/antidote
+- git AntidoteDB/antidote master
   - default config
 - topologies
   - 5 * dc1n1
   - 1 * dc1n5
 - Erlang client
-  - grow-only set CRDT data type
+  - `:antidote_crdt_set_aw`, `:antidote_crdt_counter_pn` datatypes
   - `static: :true` transactions
 
 ----
@@ -19,44 +19,31 @@
   <tr>
     <th>Phase</th>
     <th>Activity</th>
-    <th>Faults</th>
     <th>Duration</th>
   </tr>
   <tr>
-    <td>preamble</td>
-    <td>~ 1 add / node / sec</td>
-    <td></td>
-    <td>5s<td>
-  </tr>
-  <tr>
-    <td>workload</td>
-    <td>~ 10 add/read (random mix) / sec</td>
-    <td>random</td>
+    <th rowspan=2>workload</th>
+    <td>~ 10 read/write (random mix) / sec</td>
     <td>60s<td>
   </tr>
   <tr>
-    <td>heal</td>
+    <td>fault(s) (random)</td>
+    <td>0 <= random <= 16s <td>
+  </tr>
+  <tr>
+    <th>heal</th>
     <td>resolve any faults</td>
-    <td></td>
-    <td><td>
+    <td>immediate<td>
   </tr>
   <tr>
-    <td>final adds</td>
-    <td>~ 1 add / sec</td>
-    <td></td>
+    <th>quiesce</th>
+    <td>none</td>
     <td>10s<td>
   </tr>
   <tr>
-    <td>quiesce</td>
-    <td></td>
-    <td></td>
-    <td>10s<td>
-  </tr>
-  <tr>
-    <td>final reads</td>
-    <td>1 read /node</td>
-    <td></td>
-    <td><td>
+    <th>final reads</th>
+    <td>1 read / node</td>
+    <td>immediate<td>
   </tr>
 </table>
 
@@ -80,19 +67,22 @@
 
 ## Verification
 
-Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#var-set-full) model/checker for verification.
+Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#var-set-full) and [pn-counter](https://github.com/jepsen-io/maelstrom/blob/main/doc/04-crdts/02-counters.md) model/checkers for verification.
 
 ----
 
-## Anomalies Observed/Reproducible
+## Anomalies
 <table>
   <tr>
-    <th colspan=2></th>
+    <th colspan=6 style="text-align:center;">Anomalies Observed/Reproducible</th>
+  </tr>
+  <tr>
+    <td colspan=2></td>
     <th colspan=4 style="text-align:center;">Faults</th>
   </tr>
   <tr>
-    <th></th>
-    <th></th>
+    <td></td>
+    <td></td>
     <th>none</th>
     <th>partition</th>
     <th>pause</th>
@@ -101,31 +91,50 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
   <tr>
     <th rowspan=2>Intra DC</th>
     <th>observed</th>
-    <td>false</td>
-    <td>true</td>
-    <td>true</td>
-    <td>true</td>
+    <td>no</td>
+    <td>yes</td>
+    <td>yes</td>
+    <td>yes</td>
   </tr>
   <tr>
     <th>reproducible</th>
     <td></td>
-    <td>false</td>
-    <td>true</td>
-    <td>true</td>
+    <td>no</td>
+    <td>yes</td>
+    <td>yes</td>
   </tr>
  <tr>
     <th rowspan=2>Inter DC</th>
     <th>observed</th>
-    <td>true</td>
-    <td>true</td>
-    <td>true</td>
-    <td>true</td>
+    <td>yes</td>
+    <td>yes</td>
+    <td>yes</td>
+    <td>yes</td>
   </tr>
   <tr>
     <th>reproducible</th>
-    <td>false</td>
-    <td>true</td>
-    <td>true</td>
-    <td>true</td>
+    <td>no</td>
+    <td>yes</td>
+    <td>yes</td>
+    <td>yes</td>
   </tr>
 <table>
+
+----
+
+## Observations (***Very*** Preliminary)
+
+Under normal, e.g. no faults, operating conditions no anomolies have been observed.
+
+### g-set
+
+- one of initial client adds often times out, but doesn't affect valid outcome
+  
+### pn-counter
+
+- intra-dc paritioning
+  - lots of client timeouts
+  - but valid results
+- inter-dc partitioning
+  - no client errors, timeouts, etc, all `:ok`
+  - but invalid results
