@@ -18,9 +18,9 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   alias FuzzDist.{Jepsen, Telemetry}
 
-  @callback g_set_add(antidote_conn :: pid(), value :: binary()) :: :ok
-  @callback g_set_read(antidote_conn :: pid()) :: {:ok, binary()}
-  @callback setup_primary(topology :: atom(), nodes :: nonempty_list()) :: :ok
+  @callback g_set_add(antidote_conn :: pid(), value :: integer()) :: :ok
+  @callback g_set_read(antidote_conn :: pid()) :: {:ok, list(integer())}
+  @callback setup_primary(topology :: atom(), nodes :: nonempty_list(node())) :: :ok
 
   @callback pn_counter_add(antidote_conn :: pid(), value :: integer()) :: :ok
   @callback pn_counter_read(antidote_conn :: pid()) :: {:ok, integer()}
