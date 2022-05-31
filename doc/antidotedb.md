@@ -4,12 +4,14 @@
 
 - git AntidoteDB/antidote master
   - default config
+  - Erlang 24
 - topologies
   - 5 * dc1n1
   - 1 * dc1n5
 - Erlang client
   - `:antidote_crdt_set_aw`, `:antidote_crdt_counter_pn` datatypes
   - `static: :true` transactions
+  - `:timeout 1_000`
 
 ----
 
@@ -28,7 +30,7 @@
   </tr>
   <tr>
     <td>fault(s) (random)</td>
-    <td>0 <= random <= 16s <td>
+    <td>0 <= random <= 30s <td>
   </tr>
   <tr>
     <th>heal</th>
@@ -59,9 +61,14 @@
 
 [:one, :all, :majority, :minority, :minority_third, :majorities_ring :primaries]
 
+Clock and time faults are not being tested.
+(Need real VMs.)
+
 ### Duration
 
-`0 <= partition_duration < NETTICK_TIME`
+0 <= fault_duration <= `NetTickTime` - 1
+
+(Currently testing with `NetTickTime` / 2.)
 
 ----
 
@@ -77,13 +84,9 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
     <th colspan=6 style="text-align:center;">Anomalies Observed/Reproducible</th>
   </tr>
   <tr>
-    <td colspan=2></td>
-    <th colspan=4 style="text-align:center;">Faults</th>
-  </tr>
-  <tr>
     <td></td>
     <td></td>
-    <th>none</th>
+    <th>no faults</th>
     <th>partition</th>
     <th>pause</th>
     <th>kill</th>
@@ -91,29 +94,29 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
   <tr>
     <th rowspan=2>Intra DC</th>
     <th>observed</th>
-    <td>no</td>
-    <td>yes</td>
-    <td>yes</td>
-    <td>yes</td>
+    <td>none</td>
+    <td>none</td>
+    <td>none</td>
+    <td>almost always</td>
   </tr>
   <tr>
     <th>reproducible</th>
     <td></td>
-    <td>no</td>
-    <td>yes</td>
+    <td></td>
+    <td></td>
     <td>yes</td>
   </tr>
  <tr>
     <th rowspan=2>Inter DC</th>
     <th>observed</th>
+    <td>none</td>
+    <td>always</td>
     <td>yes</td>
-    <td>yes</td>
-    <td>yes</td>
-    <td>yes</td>
+    <td>almost always</td>
   </tr>
   <tr>
     <th>reproducible</th>
-    <td>no</td>
+    <td></td>
     <td>yes</td>
     <td>yes</td>
     <td>yes</td>
@@ -124,17 +127,32 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 
 ## Observations (***Very*** Preliminary)
 
-Under normal, e.g. no faults, operating conditions no anomolies have been observed.
+`:antidote_crdt_set_aw` and `:antidote_crdt_counter_pn` datatypes appear to behave similarly re success/failure.
+
+With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact.
+
+Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of partitioning was able to introduce an observed anomaly.
+
+Inter-dc partitioning
+  - can be no client errors, timeouts, etc, all `:ok`
+    - but invalid results
+  - other times cluster appears to loose cohesion
 
 ### g-set
 
-- one of initial client adds often times out, but doesn't affect valid outcome
+- client adds periodically time out, `:timeout 1_000` but doesn't affect valid outcome
+  - even w/o faults
   
 ### pn-counter
 
-- intra-dc paritioning
+- intra-dc partitioning
   - lots of client timeouts
   - but valid results
-- inter-dc partitioning
-  - no client errors, timeouts, etc, all `:ok`
-  - but invalid results
+
+### Work In Progress
+
+- `:interactive` transactions
+- abort transactions
+- better client error handling
+  - discern between known/unknown failures
+  - descriptive logging
