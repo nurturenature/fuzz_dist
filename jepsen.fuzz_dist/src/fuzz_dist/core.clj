@@ -120,8 +120,8 @@
                           :stats      (checker/stats)
                           :exceptions (checker/unhandled-exceptions)
                           ;; TODO confirm pattern matching with actual errors in log file(s)
-                          :logs-antidote  (checker/log-file-pattern #"error:"  db/antidote-log-file)
-                          :logs-fuzz-dist (checker/log-file-pattern #"[error]" db/fuzz-dist-log-file)})
+                          :logs-antidote  (checker/log-file-pattern #"error\:"   db/antidote-log-file)
+                          :logs-fuzz-dist (checker/log-file-pattern #"\[error\]" db/fuzz-dist-log-file)})
             :logging    {:overrides
                          ;; TODO: how to turn off SLF4J logging?
                          {"io.netty.util.internal.InternalThreadLocalMap" :off
@@ -204,13 +204,13 @@
   (let [workloads (if-let [w (:workload opts)]
                     [w]
                     (keys workloads))
-        nemeses   (if (nil? (:nemesis opts))
-                    test-all-nemeses
-                    [{:nemesis (:nemesis opts)}])
+        nemeses   (if-let [nemeses (:nemesis opts)]
+                    [{:nemesis nemeses}]
+                    test-all-nemeses)
         counts    (range (:test-count opts))]
-    (for [w workloads, n nemeses, l [false true], i counts]
+    (for [w workloads, n nemeses, i counts]
       (-> opts
-          (assoc :workload w, :linearizable? l)
+          (assoc :workload w)
           (merge n)
           fuzz-dist-test))))
 
