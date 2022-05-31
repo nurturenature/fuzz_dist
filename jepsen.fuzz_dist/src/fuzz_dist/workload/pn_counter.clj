@@ -48,27 +48,13 @@
     (s/close! conn)))
 
 (defn workload
-  "Constructs a workload, {:client, :preamble-generator, :generator, :final-generator, :checker},
+  "Constructs a workload, {:client, :generator, :final-generator, :checker},
    for a pn-counter, given options from the CLI test constructor."
   [opts]
   {:client (PNCounterClient. nil)
-   :preamble-generator (->> (gen/mix [(pn-counter-adds)
-                                      (pn-counter-reads false)])
-                            (gen/stagger (/ (count (:nodes opts))))
-                            (gen/time-limit 5)
-                            (gen/clients))
    :generator (gen/mix [(pn-counter-adds)
                         (pn-counter-reads false)])
    :final-generator (gen/phases
-                     ;; a simple sequence of transactions to help clarify end state and final reads
-                     (gen/log "Final adds/reads in healed state...")
-                     (->>
-                      (gen/mix [(pn-counter-adds)
-                                (pn-counter-reads false)])
-                      (gen/stagger (/ 1))
-                      (gen/time-limit 10)
-                      (gen/clients))
-
                      (gen/log "Let database quiesce...")
                      (gen/sleep 10)
 
