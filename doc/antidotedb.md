@@ -97,7 +97,7 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
     <td>none</td>
     <td>none</td>
     <td>none</td>
-    <td>almost always</td>
+    <td>yes</td>
   </tr>
   <tr>
     <th>reproducible</th>
@@ -110,9 +110,9 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
     <th rowspan=2>Inter DC</th>
     <th>observed</th>
     <td>none</td>
-    <td>always</td>
     <td>yes</td>
-    <td>almost always</td>
+    <td>yes</td>
+    <td>yes</td>
   </tr>
   <tr>
     <th>reproducible</th>
@@ -127,8 +127,6 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 
 ## Observations (***Very*** Preliminary)
 
-`:antidote_crdt_set_aw` and `:antidote_crdt_counter_pn` datatypes appear to behave similarly re success/failure.
-
 With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact.
 
 Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of partitioning was able to introduce an observed anomaly.
@@ -136,7 +134,9 @@ Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter,
 Inter-dc partitioning
   - can be no client errors, timeouts, etc, all `:ok`
     - but invalid results
-  - other times cluster appears to loose cohesion
+  - other times cluster appears to loose complete cohesion
+
+`:antidote_crdt_set_aw` and `:antidote_crdt_counter_pn` datatypes appear to behave similarly re no faults, partition and pause. `:antidote_crdt_counter_pn` is more resilent to process kills, the clients `:error` and the counter remains valid.
 
 ### g-set
 
@@ -151,8 +151,8 @@ Inter-dc partitioning
 
 ### Work In Progress
 
-- `:interactive` transactions
-- abort transactions
+- add `:interactive` transactions
+- add aborting transactions
 - better client error handling
   - discern between known/unknown failures
   - descriptive logging
