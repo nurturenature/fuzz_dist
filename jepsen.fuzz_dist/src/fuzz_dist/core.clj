@@ -119,8 +119,8 @@
                           :timeline   (timeline/html)
                           :stats      (checker/stats)
                           :exceptions (checker/unhandled-exceptions)
-                          ;; TODO confirm pattern matching with actual errors in log file(s)
-                          :logs-antidote  (checker/log-file-pattern #"error\:"   db/antidote-log-file)
+                          ; TODO confirm: do error messages in Antidote count as an error?
+                          ; :logs-antidote  (checker/log-file-pattern #"error\:"   db/antidote-log-file)
                           :logs-fuzz-dist (checker/log-file-pattern #"\[error\]" db/fuzz-dist-log-file)})
             :logging    {:overrides
                          ;; TODO: how to turn off SLF4J logging?

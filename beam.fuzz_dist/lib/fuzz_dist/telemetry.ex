@@ -84,7 +84,10 @@ defmodule FuzzDist.Telemetry do
 
     #### Metadata:
 
+      * reply returned by read, may contain keys:
+      * :type  - :ok, :fail, :info.
       * :value - Value returned by read.
+      * :error - Supplemental error information.
 
   * `[:fuzz_dist, :pn_counter_add, :start]` - Executed on receipt of Jepsen :add operation.
 
@@ -104,7 +107,9 @@ defmodule FuzzDist.Telemetry do
 
     #### Metadata:
 
-      * `%{}`
+      * reply returned by add, may contain keys:
+      * :type  - :ok, :fail, :info.
+      * :error - Supplemental error information.
 
   * `[:fuzz_dist, :setup_primary, :start]` - Executed on receipt of Jepsen :setup_primary operation.
 

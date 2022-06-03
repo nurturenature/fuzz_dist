@@ -18,12 +18,14 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   alias FuzzDist.{Jepsen, Telemetry}
 
+  # TODO update and rationalize return types for Antidote calls
   @callback g_set_add(antidote_conn :: pid(), value :: integer()) :: :ok
   @callback g_set_read(antidote_conn :: pid()) :: {:ok, list(integer())}
-  @callback setup_primary(topology :: atom(), nodes :: nonempty_list(node())) :: :ok
 
   @callback pn_counter_add(antidote_conn :: pid(), value :: integer()) :: :ok
   @callback pn_counter_read(antidote_conn :: pid()) :: {:ok, integer()}
+
+  @callback setup_primary(topology :: atom(), nodes :: nonempty_list(node())) :: :ok
 
   @impl true
   def init(_args) do
@@ -68,20 +70,30 @@ defmodule FuzzDist.Jepsen.JepSir do
         {"PnCounter", "add", %{value: value}} ->
           start_time = Telemetry.start(:pn_counter_add, %{value: value})
 
-          :ok = Jepsen.Antidote.pn_counter_add(antidote_conn, value)
+          reply =
+            case Jepsen.Antidote.pn_counter_add(antidote_conn, value) do
+              :ok -> %{type: :ok}
+              {:error, :aborted} -> %{type: :fail, error: :aborted}
+              {:error, :timeout} -> %{type: :info, error: :timeout}
+              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
+            end
 
-          Telemetry.stop(:pn_counter_add, start_time)
+          Telemetry.stop(:pn_counter_add, start_time, reply)
 
-          %{type: :ok}
+          reply
 
         {"PnCounter", "read", _} ->
           start_time = Telemetry.start(:pn_counter_read)
 
-          {:ok, value} = Jepsen.Antidote.pn_counter_read(antidote_conn)
+          reply =
+            case Jepsen.Antidote.pn_counter_read(antidote_conn) do
+              {:ok, value} -> %{type: :ok, value: value}
+              {:error, :timeout} -> %{type: :info, error: :timeout}
+            end
 
-          Telemetry.stop(:pn_counter_read, start_time, %{value: value})
+          Telemetry.stop(:pn_counter_read, start_time, reply)
 
-          %{type: :ok, value: value}
+          reply
 
         {"Db", "setup_primary", %{topology: topology, nodes: nodes}} ->
           start_time = Telemetry.start(:setup_primary, %{topology: topology, nodes: nodes})
