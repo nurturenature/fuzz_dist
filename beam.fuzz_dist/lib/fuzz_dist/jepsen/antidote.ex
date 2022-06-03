@@ -8,6 +8,9 @@ defmodule FuzzDist.Jepsen.Antidote do
     - docs say static transactions don't need to be closed or managed
 
   Function names and `@spec`s are the same as the Jepsen client protocol.
+
+  Explicit match for all Antidote returns.
+  Unexpected values should crash the client to indicated unknown, Jepsen's :info, result.`
   """
 
   @behaviour FuzzDist.Jepsen.JepSir
@@ -49,12 +52,10 @@ defmodule FuzzDist.Jepsen.Antidote do
   def pn_counter_read(antidote_conn) do
     {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
 
-    {:ok, [pn_counter]} =
-      :antidotec_pb.read_objects(antidote_conn, [@pn_counter_obj], static_trans)
-
-    pn_counter_value = :antidotec_counter.value(pn_counter)
-
-    {:ok, pn_counter_value}
+    case :antidotec_pb.read_objects(antidote_conn, [@pn_counter_obj], static_trans) do
+      {:ok, [pn_counter]} -> {:ok, :antidotec_counter.value(pn_counter)}
+      {:error, :timeout} -> {:error, :timeout}
+    end
   end
 
   @impl true
@@ -66,7 +67,12 @@ defmodule FuzzDist.Jepsen.Antidote do
     updated_pn_counter = :antidotec_counter.increment(pn_counter_value, :antidotec_counter.new())
     updated_ops = :antidotec_counter.to_ops(@pn_counter_obj, updated_pn_counter)
 
-    :ok = :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans)
+    case :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans) do
+      :ok -> :ok
+      {:error, :aborted} -> {:error, :aborted}
+      {:error, :timeout} -> {:error, :timeout}
+      {:error, {:unknown, err_msg}} -> {:error, {:unknown, err_msg}}
+    end
   end
 
   @impl true
