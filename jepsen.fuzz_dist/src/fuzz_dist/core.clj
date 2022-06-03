@@ -165,7 +165,7 @@
   "Additional command line options."
   [[nil "--linearizable? BOOLEAN" "Check for linearizability"
     :default false
-    :parse-fn parse-boolean]
+    :parse-fn boolean]
 
    [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
     :parse-fn parse-nemesis-spec
