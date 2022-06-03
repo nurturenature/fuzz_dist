@@ -10,7 +10,7 @@ defmodule FuzzDist.Jepsen.Antidote do
   Function names and `@spec`s are the same as the Jepsen client protocol.
 
   Explicit match for all Antidote returns.
-  Unexpected values should crash the client to indicated unknown, Jepsen's :info, result.`
+  Unexpected values should crash the client to indicated unknown, Jepsen's :info, result.
   """
 
   @behaviour FuzzDist.Jepsen.JepSir
