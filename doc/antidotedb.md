@@ -146,8 +146,8 @@ Inter-dc partitioning
 ### pn-counter
 
 - intra-dc partitioning
-  - lots of client timeouts
-  - but valid results
+  - lots of client timeouts, but valid results
+  - can crash stable_meta_data_server
 
 ### Work In Progress
 

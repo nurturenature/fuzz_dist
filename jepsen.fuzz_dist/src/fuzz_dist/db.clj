@@ -78,8 +78,8 @@
     db/LogFiles
     (log-files [db test node]
     ;; Log file directories and names will change based on usage of start-daemon! 
-      {node-fuzz-dist-log-file            "fuzz_dist_daemon"
-       node-antidote-log-file             "antidote_daemon"
+      {node-fuzz-dist-log-file fuzz-dist-log-file
+       node-antidote-log-file  antidote-log-file
        (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors"
        (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info"})
 
