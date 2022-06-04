@@ -51,21 +51,31 @@ defmodule FuzzDist.Jepsen.JepSir do
         {"GSet", "add", %{value: value}} ->
           start_time = Telemetry.start(:g_set_add, %{value: value})
 
-          :ok = Jepsen.Antidote.g_set_add(antidote_conn, value)
+          reply =
+            case Jepsen.Antidote.g_set_add(antidote_conn, value) do
+              :ok -> %{type: :ok}
+              {:error, :aborted} -> %{type: :fail, error: :aborted}
+              {:error, :timeout} -> %{type: :info, error: :timeout}
+              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
+            end
 
-          Telemetry.stop(:g_set_add, start_time)
+          Telemetry.stop(:g_set_add, start_time, reply)
 
-          %{type: :ok}
+          reply
 
         {"GSet", "read", _} ->
           start_time = Telemetry.start(:g_set_read)
 
-          {:ok, value} = Jepsen.Antidote.g_set_read(antidote_conn)
+          reply =
+            case Jepsen.Antidote.g_set_read(antidote_conn) do
+              {:ok, value} -> %{type: :ok, value: value}
+              {:error, :timeout} -> %{type: :info, error: :timeout}
+              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
+            end
 
-          # sort for human readability, json unorders
-          Telemetry.stop(:g_set_read, start_time, %{value: Enum.sort(value)})
+          Telemetry.stop(:g_set_read, start_time, reply)
 
-          %{type: :ok, value: value}
+          reply
 
         {"PnCounter", "add", %{value: value}} ->
           start_time = Telemetry.start(:pn_counter_add, %{value: value})
@@ -89,6 +99,7 @@ defmodule FuzzDist.Jepsen.JepSir do
             case Jepsen.Antidote.pn_counter_read(antidote_conn) do
               {:ok, value} -> %{type: :ok, value: value}
               {:error, :timeout} -> %{type: :info, error: :timeout}
+              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
             end
 
           Telemetry.stop(:pn_counter_read, start_time, reply)
