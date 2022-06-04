@@ -24,16 +24,24 @@ defmodule FuzzDist.Jepsen.Antidote do
   def g_set_read(antidote_conn) do
     {:ok, static_trans} = :antidotec_pb.start_transaction(antidote_conn, :ignore, static: true)
 
-    {:ok, [g_set]} = :antidotec_pb.read_objects(antidote_conn, [@g_set_obj], static_trans)
-    g_set_value = :antidotec_set.value(g_set)
+    case :antidotec_pb.read_objects(antidote_conn, [@g_set_obj], static_trans) do
+      {:ok, [g_set]} ->
+        g_set_value = :antidotec_set.value(g_set)
 
-    return_value =
-      Enum.map(
-        g_set_value,
-        &:erlang.binary_to_term/1
-      )
+        return_value =
+          Enum.map(
+            g_set_value,
+            &:erlang.binary_to_term/1
+          )
 
-    {:ok, return_value}
+        {:ok, return_value}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
+
+      {:error, {:unknown, err_msg}} ->
+        {:error, {:unknown, err_msg}}
+    end
   end
 
   @impl true
@@ -45,7 +53,12 @@ defmodule FuzzDist.Jepsen.Antidote do
     updated_g_set = :antidotec_set.add(:erlang.term_to_binary(g_set_value), :antidotec_set.new())
     updated_ops = :antidotec_set.to_ops(@g_set_obj, updated_g_set)
 
-    :ok = :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans)
+    case :antidotec_pb.update_objects(antidote_conn, updated_ops, static_trans) do
+      :ok -> :ok
+      {:error, :aborted} -> {:error, :aborted}
+      {:error, :timeout} -> {:error, :timeout}
+      {:error, {:unknown, err_msg}} -> {:error, {:unknown, err_msg}}
+    end
   end
 
   @impl true
@@ -55,6 +68,7 @@ defmodule FuzzDist.Jepsen.Antidote do
     case :antidotec_pb.read_objects(antidote_conn, [@pn_counter_obj], static_trans) do
       {:ok, [pn_counter]} -> {:ok, :antidotec_counter.value(pn_counter)}
       {:error, :timeout} -> {:error, :timeout}
+      {:error, {:unknown, err_msg}} -> {:error, {:unknown, err_msg}}
     end
   end
 
