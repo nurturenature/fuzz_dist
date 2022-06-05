@@ -34,7 +34,12 @@ defmodule FuzzDist.MixProject do
 
   defp deps do
     [
-      {:antidotec_pb, git: "https://github.com/AntidoteDB/antidote-erlang-client.git"},
+      {:antidote_pb_codec,
+       git: "https://github.com/AntidoteDB/antidote.git",
+       subdir: "apps/antidote_pb_codec",
+       override: true},
+      {:antidotec_pb,
+       git: "https://github.com/AntidoteDB/antidote.git", subdir: "apps/antidote-erlang-client"},
       {:cowboy, "~> 2.9"},
       {:credo, "~> 1.6", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
