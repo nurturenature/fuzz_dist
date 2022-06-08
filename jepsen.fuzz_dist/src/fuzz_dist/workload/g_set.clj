@@ -1,6 +1,7 @@
 (ns fuzz-dist.workload.g-set
   (:require [clojure.tools.logging :refer :all]
             [fuzz-dist.client :as fd-client]
+            [fuzz-dist.checker.final-reads :as final-reads]
             [jepsen
              [checker :as checker]
              [client :as client]
@@ -63,5 +64,7 @@
                       (gen/once)
                       (gen/each-thread)
                       (gen/clients)))
-   :checker (checker/set-full
-             {:linearizable? (:linearizable? opts)})})
+   :checker (checker/compose
+             {:final-reads (final-reads/checker)
+              :set-full    (checker/set-full
+                            {:linearizable? (:linearizable? opts)})})})
