@@ -80,8 +80,8 @@
     ;; Log file directories and names will change based on usage of start-daemon! 
       {node-fuzz-dist-log-file fuzz-dist-log-file
        node-antidote-log-file  antidote-log-file
-       (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors"
-       (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info"})
+       (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors.log"
+       (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info.log"})
 
     db/Process
     (start! [this test node]
