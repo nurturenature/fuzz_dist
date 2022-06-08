@@ -149,12 +149,12 @@
 (def test-opt-spec
   "Options for tests."
   [[nil "--db-dir DIRECTORY" "Directory with database release"
-    :default "~/projects/antidote/_build/default/rel/antidote"
+    :default "/jepsen/antidote"
     ;; :parse-fn read-string
     ]
 
    [nil "--fuzz-dist-dir DIRECTORY" "Directory with fuzz_dist release"
-    :default "~/projects/fuzz_dist/beam.fuzz_dist/_build/prod/rel/fuzz_dist"
+    :default "/jepsen/fuzz_dist"
     ;; :parse-fn read-string
     ]
    ["-w" "--workload NAME" "What workload to run."
@@ -199,8 +199,10 @@
     :validate [topologies (cli/one-of topologies)]]])
 
 (defn all-tests
-  "Takes parsed CLI options and constructs a sequence of tests
-  using all standard nemeses."
+  "Takes parsed CLI options and constructs a sequence of tests:
+     :workload nil will iterate through all workloads
+     :nemesis nil will iterate through all test-all-nemeses
+   running each configuration :test-count times."
   [opts]
   (let [workloads (if-let [w (:workload opts)]
                     [w]
