@@ -121,7 +121,8 @@
                           :exceptions (checker/unhandled-exceptions)
                           ; TODO confirm: do error messages in Antidote count as an error?
                           ; :logs-antidote  (checker/log-file-pattern #"error\:"   db/antidote-log-file)
-                          :logs-fuzz-dist (checker/log-file-pattern #"\[error\]" db/fuzz-dist-log-file)})
+                          ; disterl :nodeup/down msgs are not considered errors
+                          :logs-fuzz-dist (checker/log-file-pattern #"\[error\]\ (?!\*\* Node :fuzz_dist\@.+\ not\ responding\ \*\*$)" db/fuzz-dist-log-file)})
             :logging    {:overrides
                          ;; TODO: how to turn off SLF4J logging?
                          {"io.netty.util.internal.InternalThreadLocalMap" :off

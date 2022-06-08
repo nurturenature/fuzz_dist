@@ -18,14 +18,14 @@ defmodule FuzzDist.Jepsen.JepSir do
 
   alias FuzzDist.{Jepsen, Telemetry}
 
-  # TODO update and rationalize return types for Antidote calls
-  @callback g_set_add(antidote_conn :: pid(), value :: integer()) :: :ok
-  @callback g_set_read(antidote_conn :: pid()) :: {:ok, list(integer())}
+  @type jepsen_return :: %{
+          :type => :fail | :info | :ok,
+          optional(:value) => term(),
+          optional(:error) => :aborted | :timeout | String.t()
+        }
 
-  @callback pn_counter_add(antidote_conn :: pid(), value :: integer()) :: :ok
-  @callback pn_counter_read(antidote_conn :: pid()) :: {:ok, integer()}
-
-  @callback setup_primary(topology :: atom(), nodes :: nonempty_list(node())) :: :ok
+  @type antidote_return ::
+          :ok | {:ok, term()} | {:error, :aborted} | {:error, :timeout} | {:error, String.t()}
 
   @impl true
   def init(_args) do
@@ -49,71 +49,19 @@ defmodule FuzzDist.Jepsen.JepSir do
     resp =
       case {mod, fun, args} do
         {"GSet", "add", %{value: value}} ->
-          start_time = Telemetry.start(:g_set_add, %{value: value})
-
-          reply =
-            case Jepsen.Antidote.g_set_add(antidote_conn, value) do
-              :ok -> %{type: :ok}
-              {:error, :aborted} -> %{type: :fail, error: :aborted}
-              {:error, :timeout} -> %{type: :info, error: :timeout}
-              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
-            end
-
-          Telemetry.stop(:g_set_add, start_time, reply)
-
-          reply
+          Jepsen.GSet.add(antidote_conn, value)
 
         {"GSet", "read", _} ->
-          start_time = Telemetry.start(:g_set_read)
-
-          reply =
-            case Jepsen.Antidote.g_set_read(antidote_conn) do
-              {:ok, value} -> %{type: :ok, value: value}
-              {:error, :timeout} -> %{type: :info, error: :timeout}
-              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
-            end
-
-          Telemetry.stop(:g_set_read, start_time, reply)
-
-          reply
+          Jepsen.GSet.read(antidote_conn)
 
         {"PnCounter", "add", %{value: value}} ->
-          start_time = Telemetry.start(:pn_counter_add, %{value: value})
-
-          reply =
-            case Jepsen.Antidote.pn_counter_add(antidote_conn, value) do
-              :ok -> %{type: :ok}
-              {:error, :aborted} -> %{type: :fail, error: :aborted}
-              {:error, :timeout} -> %{type: :info, error: :timeout}
-              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
-            end
-
-          Telemetry.stop(:pn_counter_add, start_time, reply)
-
-          reply
+          Jepsen.PNCounter.add(antidote_conn, value)
 
         {"PnCounter", "read", _} ->
-          start_time = Telemetry.start(:pn_counter_read)
-
-          reply =
-            case Jepsen.Antidote.pn_counter_read(antidote_conn) do
-              {:ok, value} -> %{type: :ok, value: value}
-              {:error, :timeout} -> %{type: :info, error: :timeout}
-              {:error, {:unknown, err_msg}} -> %{type: :info, error: err_msg}
-            end
-
-          Telemetry.stop(:pn_counter_read, start_time, reply)
-
-          reply
+          Jepsen.PNCounter.read(antidote_conn)
 
         {"Db", "setup_primary", %{topology: topology, nodes: nodes}} ->
-          start_time = Telemetry.start(:setup_primary, %{topology: topology, nodes: nodes})
-
-          :ok = Jepsen.Antidote.setup_primary(String.to_atom(topology), nodes)
-
-          Telemetry.stop(:setup_primary, start_time)
-
-          %{type: :ok}
+          Jepsen.Db.setup_primary(topology, nodes)
 
         op ->
           Logger.error("JepSir :not_implemented #{inspect(op)}")
