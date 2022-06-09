@@ -196,7 +196,15 @@
    [nil "--topology TOPOLOGY" "Topology of cluster, multiple dcs or single dc with multiple nodes"
     :default  :dcs
     :parse-fn keyword
-    :validate [topologies (cli/one-of topologies)]]])
+    :validate [topologies (cli/one-of topologies)]]
+
+    [nil "--kernel-logger-level LEVEL" "Passed to Antidote cmd line as -kernel logger_level level"
+    :default :info
+    :parse-fn keyword]
+
+    [nil "--antidote-sync-log BOOLEAN" "Passed to Antidote cmd line as -antidote sync_log boolean"
+    :default false
+    :parse-fn boolean]])
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of tests:

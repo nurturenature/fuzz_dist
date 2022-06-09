@@ -99,7 +99,9 @@
              :logfile node-antidote-log-file
              :pidfile node-antidote-pid-file}
             "bin/antidote"
-            :foreground))
+            :foreground
+            :-kernel   :logger_level (:kernel-logger-level test)
+            :-antidote :sync_log     (:antidote-sync-log   test)))
           :restarted))
 
       (if (cu/daemon-running? node-fuzz-dist-pid-file)
