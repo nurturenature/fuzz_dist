@@ -33,9 +33,26 @@
                            :fun fun
                            :args op})
                          timeout))
-     (throw+ [:type :info :error "Failed to put to websocket connection."]))
+     (throw+ [:type :info
+              :error (str "Websocket put failed: " {:conn (->> conn
+                                                               s/description
+                                                               :sink
+                                                               :connection
+                                                               :remote-address)
+                                                    :mod mod
+                                                    :fun fun
+                                                    :args op})]))
 
-   (let [resp @(s/try-take! conn timeout)]
-     (if (= nil resp)
-       (throw+ [:type :info :error "Failed to take from websocket connection."]))
-     (json/parse-string resp true))))
+   (let [resp @(s/try-take! conn :fail timeout :timeout)]
+     (case resp
+       (:fail, :timeout) (throw+ [:type :info
+                                  :error (str "Websocket take " resp " after putting: "
+                                              {:conn (->> conn
+                                                          s/description
+                                                          :source
+                                                          :connection
+                                                          :remote-address)
+                                               :mod mod
+                                               :fun fun
+                                               :args op})])
+       (json/parse-string resp true)))))
