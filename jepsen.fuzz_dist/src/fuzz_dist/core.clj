@@ -36,7 +36,7 @@
   [{:nemesis nil}
    {:nemesis #{:partition}}
    {:nemesis #{:pause}}
-   {:nemesis #{:kill}}])
+   {:nemesis #{:kill} :antidote-sync-log? true}])
 
 (def partition-targets
   "Valid targets for partition nemesis operations."
@@ -73,20 +73,20 @@
 (defn test-name
   "Meaningful test name."
   [opts]
-  (str "fuzz-dist"
-       "-Antidote"
-       "-" (case (:topology opts)
+  (str "Antidote"
+       " " (:workload opts)
+       " " (case (:topology opts)
              :dcs   (str (count (:nodes opts)) "xdcn1")
              :nodes (str "1" "xdcn" (count (:nodes opts))))
-       "-" (if (empty? (:nemesis opts))
+       " " (if (empty? (:nemesis opts))
              (str ":no-faults")
-             (str (seq (:nemesis opts))  "," (:nemesis-interval opts) "s"))
-       "-for-" (:time-limit opts) "s"
-       "-" (:rate opts) "ts"
-       (if (:linearizable? opts)
-         (str "-linearizable")
+             (str (seq (:nemesis opts))))
+       (if (:antidote-sync-log? opts)
+         (str " sync-log")
          (str ""))
-       "-" (:workload opts)))
+       (if (:linearizable? opts)
+         (str " linearizable")
+         (str ""))))
 
 (defn fuzz-dist-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
@@ -146,32 +146,64 @@
        (mapcat #(get special-nemeses % [%]))
        set))
 
-(def test-opt-spec
-  "Options for tests."
-  [[nil "--db-dir DIRECTORY" "Directory with database release"
-    :default "/jepsen/antidote"
-    ;; :parse-fn read-string
-    ]
+(def test-cli-opts
+  "CLI options just for test"
+  [[nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
+    :default  nil
+    :parse-fn parse-nemesis-spec
+    :validate [(partial every? (into nemeses (keys special-nemeses)))
+               (str (cli/one-of nemeses) ", or " (cli/one-of special-nemeses))]]
 
-   [nil "--fuzz-dist-dir DIRECTORY" "Directory with fuzz_dist release"
-    :default "/jepsen/fuzz_dist"
-    ;; :parse-fn read-string
-    ]
+   [nil "--topology TOPOLOGY" "Topology of cluster, multiple dcs or single dc with multiple nodes"
+    :default  :nodes
+    :parse-fn keyword
+    :validate [topologies (cli/one-of topologies)]]
+
    ["-w" "--workload NAME" "What workload to run."
     :default :g-set
     :parse-fn keyword
     :validate [workloads (cli/one-of workloads)]]])
 
-(def opt-spec
-  "Additional command line options."
-  [[nil "--linearizable? BOOLEAN" "Check for linearizability"
-    :default false
-    :parse-fn boolean]
-
-   [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
+(def test-all-cli-opts
+  "CLI options just for test-all.
+   Lack of :default value, e.g. will be nill, causes test-all to use all values"
+  [[nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
     :parse-fn parse-nemesis-spec
     :validate [(partial every? (into nemeses (keys special-nemeses)))
                (str (cli/one-of nemeses) ", or " (cli/one-of special-nemeses))]]
+
+   [nil "--topology TOPOLOGY" "Topology of cluster, multiple dcs or single dc with multiple nodes"
+    :parse-fn keyword
+    :validate [topologies (cli/one-of topologies)]]
+
+   ["-w" "--workload NAME" "What workload to run."
+    :parse-fn keyword
+    :validate [workloads (cli/one-of workloads)]]])
+
+(def cli-opts
+  "Additional command line options."
+  [[nil "--antidote-sync-log? BOOLEAN" "Passed to Antidote cmd line as -antidote sync_log boolean"
+    :default false
+    :parse-fn boolean]
+
+   [nil "--db-dir DIRECTORY" "Directory with database release"
+    :default "/jepsen/antidote"]
+
+   [nil "--db-targets TARGETS" "A comma-separated list of nodes to target for db nemesus; e.g. one,all"
+    :default (vec db-targets)
+    :parse-fn parse-comma-kws
+    :validate [(partial every? db-targets) (cli/one-of db-targets)]]
+
+   [nil "--fuzz-dist-dir DIRECTORY" "Directory with fuzz_dist release"
+    :default "/jepsen/fuzz_dist"]
+
+   [nil "--kernel-logger-level LEVEL" "Passed to Antidote cmd line as -kernel logger_level level"
+    :default :debug
+    :parse-fn keyword]
+
+   [nil "--linearizable? BOOLEAN" "Check for linearizability"
+    :default false
+    :parse-fn boolean]
 
    [nil "--nemesis-interval SECONDS" "How long to wait between nemesis faults."
     :default  15
@@ -183,45 +215,31 @@
     :parse-fn parse-comma-kws
     :validate [(partial every? partition-targets) (cli/one-of partition-targets)]]
 
-   [nil "--db-targets TARGETS" "A comma-separated list of nodes to target for db nemesus; e.g. one,all"
-    :default (vec db-targets)
-    :parse-fn parse-comma-kws
-    :validate [(partial every? db-targets) (cli/one-of db-targets)]]
-
    [nil "--rate HZ" "Target number of ops/sec"
     :default  10
     :parse-fn read-string
-    :validate validate-non-neg]
-
-   [nil "--topology TOPOLOGY" "Topology of cluster, multiple dcs or single dc with multiple nodes"
-    :default  :dcs
-    :parse-fn keyword
-    :validate [topologies (cli/one-of topologies)]]
-
-    [nil "--kernel-logger-level LEVEL" "Passed to Antidote cmd line as -kernel logger_level level"
-    :default :info
-    :parse-fn keyword]
-
-    [nil "--antidote-sync-log BOOLEAN" "Passed to Antidote cmd line as -antidote sync_log boolean"
-    :default false
-    :parse-fn boolean]])
+    :validate validate-non-neg]])
 
 (defn all-tests
   "Takes parsed CLI options and constructs a sequence of tests:
-     :workload nil will iterate through all workloads
-     :nemesis nil will iterate through all test-all-nemeses
+     :topology or :workload or :nemesis
+   = nil will iterate through all values
    running each configuration :test-count times."
   [opts]
   (let [workloads (if-let [w (:workload opts)]
                     [w]
                     (keys workloads))
-        nemeses   (if-let [nemeses (:nemesis opts)]
-                    [{:nemesis nemeses}]
+        topos     (if-let [t (:topology opts)]
+                    [t]
+                    topologies)
+        nemeses   (if-let [n (:nemesis opts)]
+                    [{:nemesis n}]
                     test-all-nemeses)
         counts    (range (:test-count opts))]
-    (for [w workloads, n nemeses, i counts]
+    (for [w workloads, t topos, n nemeses, i counts]
       (-> opts
-          (assoc :workload w)
+          (assoc :workload w
+                 :topology t)
           (merge n)
           fuzz-dist-test))))
 
@@ -230,8 +248,10 @@
                 browsing results."
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn  fuzz-dist-test
-                                         :opt-spec (concat test-opt-spec opt-spec)})
+                                         :opt-spec (into cli-opts
+                                                         test-cli-opts)})
                    (cli/test-all-cmd    {:tests-fn all-tests
-                                         :opt-spec (concat test-opt-spec opt-spec)})
+                                         :opt-spec (into cli-opts
+                                                         test-all-cli-opts)})
                    (cli/serve-cmd))
             args))
