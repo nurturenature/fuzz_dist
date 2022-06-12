@@ -144,3 +144,11 @@ Client writes occasionally return `:aborted` when not expected, e.g. no faults, 
 - better client error handling
   - discern between known/unknown failures
   - more descriptive logging
+
+----
+
+## Usage
+
+Current docker compose is problematic, so a [workaround](https://github.com/nurturenature/jepsen-docker-workaround) has been developed.
+
+Jepsen's LXC [environment](https://github.com/jepsen-io/jepsen#lxc) is the best.
