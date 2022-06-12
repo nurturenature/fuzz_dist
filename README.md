@@ -9,7 +9,7 @@ Generative property testing of...
 
 ... And validate the results with a model/checker.
 
----
+----
 
 ## Using Jepsen
 
@@ -27,7 +27,7 @@ Using Jepsen meaningfully, like all dist-sys endeavors, is a meaningful commitme
 - build/test/run environment pre-configured for BEAM
 - more efficient/effective fault injection
 
----
+----
 
 ## BEAM Aware
 
@@ -54,42 +54,18 @@ The BEAM was built to be observed. Combine these observations with Jepsen fault 
   - `Telemetry.execute(:trouble, :start)`
 - ...
 
----
+----
 
-## Current Development
+## Current Development, Usage
 
 > "Always be suspicious of success."
 > 
 > -- <cite>Leslie Lamport</cite>
 
-### Current AntidoteDB test:
+Please see the current AntidoteDB [tests](doc/antidotedb.md),
+and an [environment](https://github.com/nurturenature/jepsen-docker-workaround) to run them.
 
-- DB
-  - build/install
-  - configure cluster (5 * dc1n1)
-  - capture logs
-  
-- client
-  - Elixir `@behavior` using Erlang client API
-  - `static:` transactions
-  
-- operations generator
-  - random mix of add or read
-
-
-- nemesis (fault injection)
-  - partitions
-    - majority/minority
-    - majorities ring
-    - bridge
-  - isolate an individual data center
-
-- model/checker
-  - grow-set (Jepsen's internal `(set-full)`)
-
-- basic stats/analysis
-
----
+----
 
 ## .next()
 
@@ -117,30 +93,3 @@ Fuzzing distributed systems productively, i.e. actually improving documentation/
 The Jepsen community has lead the way in showing us how to do it effectively, ethically, and in a way that's truly fun.
 
 Many thanks to @Aphyr and https://jepsen.io for https://github.com/jepsen-io/jepsen.
-
-
----
-
-## Usage
-
-`fuzz_dist` is designed to run in the same default environment that Jepsen
-core develops/tests with: https://github.com/jepsen-io/jepsen#lxc
-
-This is an initial setup and a fuller solution is under development,
-https://github.com/nurturenature/fuzz_dist/issues/38.
-
-```bash
-cd $project/fuzz_dist/jepsen.fuzz_dist
-# run a random test with default values
-lein run test --db-dir $path --fuzz-dist-dir $path
-
-# run a series of tests iterating through default values
-lein run test-all --db-dir $path --fuzz-dist-dir $path
-
-# launch webserver to interact with, http://localhost:8080,
-# test results, leave terminal open to leave webserver running
-lein run serve
-
-# list all options
-lein run test --help
-```
