@@ -54,9 +54,9 @@
        (c/exec :rm :-f  "/root/.erlang.cookie")))
 
     db/Primary
+    ; Antidote doesn't have the concept of primary nodes.
+    ; For Jepsen semantics, all Antidote nodes can be primaries.
     (primaries [db test]
-      ;; Antidote doesn't have the concept of primary nodes.
-      ;; For Jepsen semantics, all Antidote nodes can be primaries.
       (:nodes test))
 
     (setup-primary! [db test node]
@@ -77,17 +77,16 @@
 
     db/LogFiles
     (log-files [db test node]
-    ;; Log file directories and names will change based on usage of start-daemon! 
       {node-fuzz-dist-log-file fuzz-dist-log-file
        node-antidote-log-file  antidote-log-file
        (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors.log"
        (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info.log"})
 
     db/Process
+    ; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
+    ; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
+    ; Erlang process name is beam.smp
     (start! [this test node]
-    ;; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
-    ;; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
-    ;; (Also keep db/LogFiles in sync.)
       (if (cu/daemon-running? node-antidote-pid-file)
         :already-running
         (do
@@ -101,7 +100,7 @@
             "bin/antidote"
             :foreground
             :-kernel   :logger_level (:kernel-logger-level test)
-            :-antidote :sync_log     (:antidote-sync-log   test)))
+            :-antidote :sync_log     (:antidote-sync-log?  test)))
           :restarted))
 
       (if (cu/daemon-running? node-fuzz-dist-pid-file)
@@ -121,17 +120,14 @@
     (kill! [this test node]
       (c/su
        (cu/stop-daemon! node-fuzz-dist-pid-file)
-       (cu/grepkill! :antidote)
        (cu/stop-daemon! node-antidote-pid-file)
-       (cu/grepkill! :fuzz_dist)))
+       (cu/grepkill! "beam.smp")))
 
     db/Pause
     (pause! [this test node]
       (c/su
-       (cu/grepkill! :stop :fuzz_dist)
-       (cu/grepkill! :stop :antidote)))
+       (cu/grepkill! :stop "beam.smp")))
 
     (resume! [this test node]
       (c/su
-       (cu/grepkill! :cont :antidote)
-       (cu/grepkill! :cont :fuzz_dist)))))
+       (cu/grepkill! :cont "beam.smp")))))
