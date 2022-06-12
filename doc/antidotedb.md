@@ -6,8 +6,8 @@
   - default config
   - Erlang 24
 - topologies
-  - 5 * dc1n1
   - 1 * dc1n5
+  - 5 * dc1n1
 - Erlang client
   - `:antidote_crdt_set_aw`, `:antidote_crdt_counter_pn` datatypes
   - `static: :true` transactions
@@ -66,9 +66,12 @@ Clock and time faults are not being tested.
 
 ### Duration
 
-0 <= fault_duration <= `NetTickTime` - 1
+Currently testing with `NetTickTime` / 2 (e.g. 30s)
 
-(Currently testing with `NetTickTime` / 2.)
+Would like to test at just less than `:nodedown`:
+
+0 <= fault_duration <= `NetTickTime` - 1 (e.g. 59s)
+
 
 ----
 
@@ -81,42 +84,25 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 ## Anomalies
 <table>
   <tr>
-    <th colspan=6 style="text-align:center;">Anomalies Observed/Reproducible</th>
+    <th colspan=5 style="text-align:center;">Anomalies Observed/Reproducible</th>
   </tr>
   <tr>
-    <td></td>
     <td></td>
     <th>no faults</th>
     <th>partition</th>
     <th>pause</th>
-    <th>kill</th>
+    <th>kill (w/sync_log)</th>
   </tr>
   <tr>
-    <th rowspan=2>Intra DC</th>
-    <th>observed</th>
+    <th>Intra DC</th>
     <td>none</td>
     <td>none</td>
     <td>none</td>
-    <td>yes</td>
-  </tr>
-  <tr>
-    <th>reproducible</th>
-    <td></td>
-    <td></td>
-    <td></td>
-    <td>yes</td>
+    <td>none</td>
   </tr>
  <tr>
-    <th rowspan=2>Inter DC</th>
-    <th>observed</th>
+    <th>Inter DC</th>
     <td>none</td>
-    <td>yes</td>
-    <td>yes</td>
-    <td>yes</td>
-  </tr>
-  <tr>
-    <th>reproducible</th>
-    <td></td>
     <td>yes</td>
     <td>yes</td>
     <td>yes</td>
@@ -125,34 +111,36 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 
 ----
 
-## Observations (***Very*** Preliminary)
+## Observations
 
 With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact.
 
-Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of partitioning was able to introduce an observed anomaly.
+Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of faults have been able to introduce an observed anomaly with intra dc nodes.
 
-Inter-dc partitioning
-  - can be no client errors, timeouts, etc, all `:ok`
-    - but invalid results
-  - other times cluster appears to loose complete cohesion
+Inter-dc faults
+  - can be invalid results, but:
+    - all transactions return `:ok`
+    - no client errors, timeouts, etc
+  - other times cluster appears to loose complete cohesion, no further writes are replicated
 
-`:antidote_crdt_set_aw` and `:antidote_crdt_counter_pn` datatypes appear to behave similarly re no faults, partition and pause. `:antidote_crdt_counter_pn` is more resilent to process kills, the clients `:error` and the counter remains valid.
+### Non-Safety
 
-### g-set
-
-- client adds periodically time out, `:timeout 1_000` but doesn't affect valid outcome
-  - even w/o faults
+Client writes occasionally return `:aborted` when not expected, e.g. no faults, but doesn't affect valid outcome.
   
 ### pn-counter
 
 - intra-dc partitioning
   - lots of client timeouts, but valid results
   - can crash stable_meta_data_server
+- process kills
+  - clients can occasionally `:error` when healed, but the counter remains valid
 
-### Work In Progress
+----
+
+## Work In Progress
 
 - add `:interactive` transactions
-- add aborting transactions
+- add application aborted transactions
 - better client error handling
   - discern between known/unknown failures
-  - descriptive logging
+  - more descriptive logging
