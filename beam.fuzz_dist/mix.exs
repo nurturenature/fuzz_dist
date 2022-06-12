@@ -36,14 +36,13 @@ defmodule FuzzDist.MixProject do
     [
       {
         :antidote_pb_codec,
-        path: "../../antidote/apps/antidote_pb_codec", override: true
-        # git: "https://github.com/AntidoteDB/antidote.git",
-        # sparse: "apps/antidote_pb_codec",
+        override: true,
+        git: "https://github.com/AntidoteDB/antidote.git",
+        sparse: "apps/antidote_pb_codec"
       },
       {
         :antidotec_pb,
-        path: "../../antidote/apps/antidotec_pb"
-        # git: "https://github.com/AntidoteDB/antidote.git", sparse: "apps/antidotec_pb"
+        git: "https://github.com/AntidoteDB/antidote.git", sparse: "apps/antidotec_pb"
       },
       {:cowboy, "~> 2.9"},
       {:credo, "~> 1.6", only: :dev, runtime: false},
