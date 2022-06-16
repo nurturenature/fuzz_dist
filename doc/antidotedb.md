@@ -98,7 +98,7 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
     <td>none</td>
     <td>none</td>
     <td>none</td>
-    <td>none</td>
+    <td>yes</td>
   </tr>
  <tr>
     <th>Inter DC</th>
@@ -113,9 +113,9 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 
 ## Observations
 
-With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact.
+With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact. Some sequencing can occationally cause a client write to timeout with no impact on validity.
 
-Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of faults have been able to introduce an observed anomaly with intra dc nodes.
+Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of faults have been able to introduce an observed anomaly with intra dc nodes except for process kills, even with `sync_log` `true`.
 
 Inter-dc faults
   - can be invalid results, but:
@@ -127,13 +127,12 @@ Inter-dc faults
 
 Client writes occasionally return `:aborted` when not expected, e.g. no faults, but doesn't affect valid outcome.
   
-### pn-counter
+Increased client write timeouts during partioning:
+- lots of client timeouts, but valid results
+- can crash stable_meta_data_server
 
-- intra-dc partitioning
-  - lots of client timeouts, but valid results
-  - can crash stable_meta_data_server
-- process kills
-  - clients can occasionally `:error` when healed, but the counter remains valid
+And with process kills
+  - clients can occasionally `:error` when healed, but results remains valid
 
 ----
 
