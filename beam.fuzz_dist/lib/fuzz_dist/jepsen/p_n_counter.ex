@@ -6,16 +6,42 @@ defmodule FuzzDist.Jepsen.PNCounter do
   alias FuzzDist.{Antidote, Telemetry}
   alias FuzzDist.Jepsen.JepSir
 
-  @callback add(antidote_conn :: pid(), value :: integer()) :: JepSir.antidote_return()
-
+  @callback increment(antidote_conn :: pid(), value :: integer()) :: JepSir.antidote_return()
+  @callback decrement(antidote_conn :: pid(), value :: integer()) :: JepSir.antidote_return()
   @callback read(antidote_conn :: pid()) :: JepSir.antidote_return()
 
-  @spec add(pid, integer) :: JepSir.jepsen_return()
-  def add(antidote_conn, value) do
+  @spec increment(pid, integer) :: JepSir.jepsen_return()
+  def increment(antidote_conn, value) do
     start_time = Telemetry.start(:pn_counter_add, %{value: value})
 
     reply =
-      case Antidote.PNCounter.add(antidote_conn, value) do
+      case Antidote.PNCounter.increment(antidote_conn, value) do
+        :ok ->
+          %{type: :ok}
+
+        {:error, :aborted} ->
+          %{type: :fail, error: :aborted}
+
+        {:error, :timeout} ->
+          %{type: :info, error: :timeout}
+
+        {:error, {:unknown, err_msg}} ->
+          {err_msg, _rest} = String.split_at(err_msg, 64)
+          err_msg = err_msg <> "..."
+          %{type: :info, error: err_msg}
+      end
+
+    Telemetry.stop(:pn_counter_add, start_time, reply)
+
+    reply
+  end
+
+  @spec decrement(pid, integer) :: JepSir.jepsen_return()
+  def decrement(antidote_conn, value) do
+    start_time = Telemetry.start(:pn_counter_add, %{value: value})
+
+    reply =
+      case Antidote.PNCounter.decrement(antidote_conn, value) do
         :ok ->
           %{type: :ok}
 

@@ -12,7 +12,9 @@
             [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn pn-counter-adds []
-  (fn [] {:type :invoke, :f :add, :value (- 1000 (rand-int 2001))}))
+  (fn [] {:type :invoke,
+          :f (rand-nth [:increment :decrement]),
+          :value (- 1000 (rand-int 2001))}))
 
 (defn pn-counter-reads [final?]
   (if final?
@@ -29,12 +31,18 @@
 
   (invoke! [_ test op]
     (case (:f op)
-      :add  (let [resp (fd-client/ws-invoke conn :pn_counter :add op)]
-              (case (:type resp)
-                "ok"   (assoc op :type :ok)
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
-                (assoc op :type :info, :error (str resp))))
+      :increment (let [resp (fd-client/ws-invoke conn :pn_counter :increment op)]
+                   (case (:type resp)
+                     "ok"   (assoc op :type :ok)
+                     "fail" (assoc op :type :fail, :error (:error resp))
+                     "info" (assoc op :type :info, :error (:error resp))
+                     (assoc op :type :info, :error (str resp))))
+      :decrement (let [resp (fd-client/ws-invoke conn :pn_counter :decrement op)]
+                   (case (:type resp)
+                     "ok"   (assoc op :type :ok)
+                     "fail" (assoc op :type :fail, :error (:error resp))
+                     "info" (assoc op :type :info, :error (:error resp))
+                     (assoc op :type :info, :error (str resp))))
       :read (let [resp (fd-client/ws-invoke conn :pn_counter :read op)]
               (case (:type resp)
                 "ok"   (assoc op :type :ok,   :value (long (:value resp)))
