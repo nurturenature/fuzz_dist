@@ -24,7 +24,7 @@
                              {:type :ok, :f :read, :final? true, :value 4}]]
               :final-reads [5 4]
               :acceptable  [[5 5]]
-              :read-range  [4 5]
+              :read-range  [[4 5]]
               :bounds      "(-∞..+∞)"
               :possible    [[0 0] [2 3] [5 5]]}
              (check [{:type :ok, :f :add, :value 2}
@@ -39,7 +39,7 @@
                              {:type :ok, :f :read, :final? true, :value 15}]]
               :final-reads [11 15]
               :acceptable  [[8 10] [13 15]]
-              :read-range  [11 15]
+              :read-range  [[11 11] [15 15]]
               :bounds      "(-∞..+∞)"
               :possible    [[-2 0] [3 5] [8 10] [13 15]]}
              (check [{:type :ok,   :f :add, :value 10}
@@ -56,7 +56,7 @@
                              {:type :ok,   :f :read, :final? true, :value 4}]]
               :final-reads [1 4]
               :acceptable  [[1 4]]
-              :read-range  [1 4]
+              :read-range  [[1 1] [4 4]]
               :bounds      "(-∞..+∞)"
               :possible    [[-1 5]]}
              (check [{:type :ok,   :f :add,  :value 1}
@@ -75,7 +75,7 @@
                              {:type :ok,   :f :read, :final? true, :value 2}]]
               :final-reads [1 2]
               :acceptable  [[1 2]]
-              :read-range  [1 2]
+              :read-range  [[1 2]]
               :bounds      "(-∞..+∞)"
               :possible    [[0 2]]}
              (check [{:type :ok,   :f :add,  :value 1}
@@ -88,7 +88,7 @@
               :errors      nil
               :final-reads [2]
               :acceptable  [[2 3]]
-              :read-range  [0 2]
+              :read-range  [[0 2]]
               :bounds      "(-∞..+∞)"
               :possible    [[0 3]]}
              (check [{:type :ok,   :f :add,  :value 1}
@@ -105,7 +105,7 @@
               :errors      [{:type :ok, :f :read, :value 1, :consistent? true}]
               :final-reads [2]
               :acceptable  [[2 3]]
-              :read-range  [0 2]
+              :read-range  [[0 2]]
               :bounds      "(-∞..+∞)"
               :possible    [[0 3]]}
              (check [{:type :ok,   :f :add,  :value 1}
@@ -136,7 +136,7 @@
                              {:type :ok,   :f :read, :final? true, :value 200}]]
               :final-reads [100 200]
               :acceptable  [[100 100] [200 200]]
-              :read-range  [100 200]
+              :read-range  [[100 100] [200 200]]
               :bounds      [0 100]
               :possible    [[0 0] [100 100] [200 200]]}
              (check-bounds [{:type :ok,   :f :add,  :value 100}
@@ -156,7 +156,7 @@
                              {:type :ok,   :f :read, :final? true, :value 200}]]
               :final-reads [100 200]
               :acceptable  [[200 200] [300 300]]
-              :read-range  [100 200]
+              :read-range  [[100 100] [200 200]]
               :bounds      [0 100]
               :possible    [[0 0] [100 100] [200 200] [300 300]]}
              (check-bounds [{:type :ok,   :f :add,  :value 100}
