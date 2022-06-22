@@ -12,7 +12,7 @@
             [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn pn-counter-adds []
-  (fn [] {:type :invoke, :f :add, :value (rand-nth [-1, 1])}))
+  (fn [] {:type :invoke, :f :add, :value (- 1000 (rand-int 2001))}))
 
 (defn pn-counter-reads [final?]
   (if final?

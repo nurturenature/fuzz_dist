@@ -1,11 +1,42 @@
 (ns fuzz-dist.checker.pn-counter
-  "Currently a clone of Jepsen's Maelstrom pn-counter.
-
-  Intent is to envolve more capabilities over time.
+  "A full checker for an eventually-consistent
+  [Positive-Negative Counter](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type#PN-Counter_(Positive-Negative_Counter)).
   
-  An eventually-consistent counter which supports increments and decrements.
-  Validates that the final read on each node has a value which is the sum of
-  all known (or possible) increments and decrements."
+  Can be optionally bounded.
+
+  Clients are `invoke!`'d with the operations:
+  ```clojure
+  {:type :invoke, :f :increment, :value integer}
+  {:type :invoke, :f :decrement, :value integer}
+  {:type :invoke, :f :read}                      ; eventually-consistent
+  {:type :invoke, :f :read, :consistent? true}   ; consistent
+  {:type :invoke, :f :read, :final? true}        ; final (assumed consistent)
+  ```
+  
+  Acceptable `:read` `:consistent?` | `:final?` `:value`'s are the sum of:
+
+  - all `:ok` `:increment` | `:decrement`
+  - any number of possibly-completed (`:info`) `:increment` | `:decrement`
+
+  Possible `:read` `:value`'s, when eventually-consistent, are the sum of:
+
+  - any number of `:ok` or possibly-completed (`:info`) `:increment` | `:decrement`
+
+  Verifies every:
+
+  - `:ok` `:read` `:value`
+      - is in the set of possible ranges
+      - is within bounds
+  - `:ok` `:read` `:consistent?` | `:final?` `:value` 
+      - is in the set of acceptable ranges
+      - is within bounds
+      - `:final?` `:value`'s are equal for all `:read`'s
+  - `:ok` `:increment` | `:decrement`
+      - acceptable counter value(s) remain within bounds
+
+  TODO: Track read 'staleness', delta between `:read` `:value` and acceptable values?
+        Plot it?
+  "
   (:require [jepsen.checker :as checker]
             [knossos.op :as op]
             [slingshot.slingshot :refer [try+ throw+]])
@@ -13,19 +44,19 @@
                                       RangeSet
                                       TreeRangeSet)))
 
-(defn range->vec
+(defn- range->vec
   "Converts an open range into a closed integer [lower upper] pair."
   [^Range r]
   [(inc (.lowerEndpoint r))
    (dec (.upperEndpoint r))])
 
-(defn acceptable->vecs
+(defn- acceptable->vecs
   "Turns an acceptable TreeRangeSet into a vector of [lower upper] inclusive
   ranges."
   [^TreeRangeSet s]
   (map range->vec (.asRanges s)))
 
-(defn acceptable-range
+(defn- acceptable-range
   "Takes a lower and upper bound for a range and constructs a Range for an
   acceptable TreeRangeSet. The constructed range will be an *open* range from
   lower - 1 to upper + 1, which ensures that merges work correctly."
@@ -33,55 +64,127 @@
   (Range/open (dec lower) (inc upper)))
 
 (defn checker
-  "This checker verifies that every final read is the sum of all
-  known-completed adds plus any number of possibly-completed adds. Returns a
-  map with :valid? true if all reads marked :final? are in the acceptable set.
-  Returns the acceptable set, encoded as a sequence of [lower upper] closed
-  ranges."
-  ; TODO
-  ;   :linearizable? or only check :final? reads
-  ;   try keeping track of current & possible counter value to
-  ;     verify valid read
-  ;     track read staleness, delta from current/possible, chart
-  ;   bounded counter
-  []
-  (reify checker/Checker
-    (check [this test history opts]
-      (let [; First, let's get all the add operations
-            adds (filter (comp #{:add} :f) history)
-            ; What's the total of the ops we *definitely* know happened?
-            definite-sum (->> adds
-                              (filter op/ok?)
-                              (map :value)
-                              (reduce +))
-            ; What are all the possible outcomes of indeterminate ops?
-            acceptable (TreeRangeSet/create)
-            _ (.add acceptable (acceptable-range definite-sum definite-sum))
-            ; For each possible add, we want to allow that either to happen or
-            ; not.
-            _ (doseq [add adds]
-                (when (op/info? add)
-                  (let [delta (:value add)]
-                    ; For each range, add delta, and merge that back in. Note
-                    ; we materialize asRanges to avoid iterating during our
-                    ; mutation.
-                    (doseq [^Range r (vec (.asRanges acceptable))]
-                      (.add acceptable
-                            (Range/open (+ (.lowerEndpoint r) delta)
-                                        (+ (.upperEndpoint r) delta)))))))
-            ; Now, extract the final reads for each node
-            reads (->> history
-                       (filter :final?)
-                       (filter op/ok?))
-            ; And find any problems
-            errors (->> reads
-                        (filter (fn [r]
-                                  ; If we get a fractional read for some
-                                  ; reason, our cute open-range technique is
-                                  ; gonna give wrong answers
-                                  (assert (integer? (:value r)))
-                                  (not (.contains acceptable (:value r))))))]
-        {:valid?      (empty? errors)
-         :errors      (seq errors)
-         :final-reads (map :value reads)
-         :acceptable  (acceptable->vecs acceptable)}))))
+  "Verifies every:
+
+  - `:ok` `:read`
+  - `:ok` | `:info` `:increment` | `:decrement`
+
+  Can be optionally bounded:
+  ```clojure
+  (checker {:bounds [lower upper]})
+  ```
+  Default bounds are `(-∞..+∞)`.
+
+  Returns:
+  ```clojure
+  {:valid?      true | false          ; any errors?
+   :errors      [trans, ...]          ; transactions with errors
+   :final-reads [value, ...]          ; all actual :final? :read :value's
+   :acceptable  [[lower upper]]       ; closed Range's of valid :final? :read :value's
+   :read-range  [lower upper]         ; closed Range of all actual :read :value's
+   :bounds      Range                 ; bounds, may be (-∞..+∞), of valid :value's
+   :possible    [[lower upper], ...]] ; all possible Range's of :value's for an eventually-consistent :read
+  }
+  ```
+  "
+  ([] (checker {}))
+  ([{bounds :bounds, :or {bounds [nil nil]}}]
+   (reify checker/Checker
+     (check [this test history opts]
+       (let [[lower upper] bounds
+             _      (assert (if (and lower upper)
+                              (<= lower upper)
+                              true))
+             bounds (cond
+                      (and lower       upper)       (acceptable-range lower upper)
+                      (and lower       (not upper)) (Range/atLeast lower)
+                      (and (not lower) upper)       (Range/atMost upper)
+                      :else                         (Range/all))
+
+             init-range (acceptable-range 0 0)
+
+             ; ! mutable data structures !
+             acceptable (TreeRangeSet/create)
+             _          (.add acceptable init-range)
+             possible   (TreeRangeSet/create acceptable)
+
+             txns  (->> history
+                        (filter #(or (and ((comp #{:add} :f) %)
+                                          (or (op/ok? %)
+                                              (op/info? %)))
+                                     (and ((comp #{:read} :f) %)
+                                          (op/ok? %)))))
+             state {:errors      (vec nil)
+                    :final-reads (vec nil)
+                    :read-range  nil}
+             state (reduce (fn [{:keys [errors final-reads read-range] :as state}
+                                {:keys [f type value final? consistent?] :as txn}]
+                             (case f
+                               :read
+                               (if (integer? value)
+                                 (assoc state
+                                        :read-range (if (nil? read-range)
+                                                      (acceptable-range value value)
+                                                      (.span read-range (acceptable-range value value)))
+                                        :errors     (if (or (not (if (or final?
+                                                                         consistent?)
+                                                                   (.contains acceptable value)
+                                                                   (.contains possible   value)))
+                                                            (not (.contains bounds value)))
+                                                      (conj errors
+                                                            txn)
+                                                      errors)
+                                        :final-reads (if final?
+                                                       (conj final-reads
+                                                             txn)
+                                                       final-reads))
+                                 (assoc state
+                                        :errors (conj errors txn)))
+
+                               :add
+                               (do
+                                ; :ok   :add happened,
+                                ;       recreate acceptable ranges as origninal plus delta.
+                                ; :info maybe happened,
+                                ;       leave existing acceptable ranges as is,
+                                ;       add new ranges of existing plus delta
+                                ; Always added to existing possible ranges.
+                                ; 
+                                ; At least one acceptable range must be in bounds after :add.
+                                ;
+                                ; Note we materialize asRanges to avoid iterating during our mutation!
+                                 (let [orig-acceptable (vec (.asRanges acceptable))
+                                       orig-possible   (vec (.asRanges possible))]
+                                   (if (= type :ok)
+                                     (.clear acceptable))
+                                   (doseq [^Range r orig-acceptable]
+                                     (.add acceptable (Range/open (+ (.lowerEndpoint r) value)
+                                                                  (+ (.upperEndpoint r) value))))
+                                   (doseq [^Range r orig-possible]
+                                     (.add possible   (Range/open (+ (.lowerEndpoint r) value)
+                                                                  (+ (.upperEndpoint r) value)))))
+                                 (assoc state
+                                        :errors (if (not (some
+                                                          #(.encloses bounds %)
+                                                          (.asRanges acceptable)))
+                                                  (conj errors txn)
+                                                  errors)))))
+                           state
+                           txns)]
+         (let [{:keys [errors, final-reads, read-range]} state
+               final-read-values (map :value final-reads)
+               errors (if (>= 1 (count (distinct final-read-values)))
+                        errors
+                        (conj errors final-reads))]
+           {:valid?      (empty? errors)
+            :errors      (seq errors)
+            :final-reads final-read-values
+            :acceptable  (acceptable->vecs acceptable)
+            :read-range  (if (nil? read-range)
+                           []
+                           (range->vec read-range))
+            :bounds      (if (and (.hasLowerBound bounds)
+                                  (.hasUpperBound bounds))
+                           (range->vec bounds)
+                           (.toString bounds))
+            :possible    (acceptable->vecs possible)}))))))
