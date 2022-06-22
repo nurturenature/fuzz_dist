@@ -11,4 +11,8 @@
                  [manifold "0.2.3"]]
   :main fuzz-dist.core
   :repl-options {:init-ns fuzz-dist.core}
-  :plugins [[jonase/eastwood "1.2.3"]])
+  :plugins [[jonase/eastwood "1.2.3"]
+            [lein-codox "0.10.8"]]
+  :codox {:output-path "target/doc/"
+          :source-uri "https://github.com/nurturenature/fuzz_dist/blob/{version}/jepsen.fuzz_dist/{filepath}#L{line}"
+          :metadata {:doc/format :markdown}})
