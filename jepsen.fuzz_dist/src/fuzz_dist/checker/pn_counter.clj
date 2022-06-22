@@ -1,8 +1,6 @@
 (ns fuzz-dist.checker.pn-counter
-  "A full checker for an eventually-consistent
+  "A full checker for an eventually-consistent, optionally bounded,
   [Positive-Negative Counter](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type#PN-Counter_(Positive-Negative_Counter)).
-  
-  Can be optionally bounded.
 
   Clients are `invoke!`'d with the operations:
   ```clojure
@@ -64,12 +62,7 @@
   (Range/open (dec lower) (inc upper)))
 
 (defn checker
-  "Verifies every:
-
-  - `:ok` `:read`
-  - `:ok` | `:info` `:increment` | `:decrement`
-
-  Can be optionally bounded:
+  "Can be optionally bounded:
   ```clojure
   (checker {:bounds [lower upper]})
   ```
@@ -81,8 +74,8 @@
    :errors      [trans, ...]          ; transactions with errors
    :final-reads [value, ...]          ; all actual :final? :read :value's
    :acceptable  [[lower upper]]       ; closed Range's of valid :final? :read :value's
-   :read-range  [lower upper]         ; closed Range of all actual :read :value's
-   :bounds      Range                 ; bounds, may be (-∞..+∞), of valid :value's
+   :read-range  [[lower upper]]       ; closed Range's of all actual :read :value's
+   :bounds      Range                 ; bounds, may be (-∞..+∞), of counter
    :possible    [[lower upper], ...]] ; all possible Range's of :value's for an eventually-consistent :read
   }
   ```
@@ -104,9 +97,10 @@
              init-range (acceptable-range 0 0)
 
              ; ! mutable data structures !
-             acceptable (TreeRangeSet/create)
-             _          (.add acceptable init-range)
-             possible   (TreeRangeSet/create acceptable)
+             acceptable  (TreeRangeSet/create)
+             _           (.add acceptable init-range)
+             possible    (TreeRangeSet/create acceptable)
+             read-values (TreeRangeSet/create)
 
              txns  (->> history
                         (filter #(or (and ((comp #{:add} :f) %)
@@ -115,29 +109,27 @@
                                      (and ((comp #{:read} :f) %)
                                           (op/ok? %)))))
              state {:errors      (vec nil)
-                    :final-reads (vec nil)
-                    :read-range  nil}
-             state (reduce (fn [{:keys [errors final-reads read-range] :as state}
+                    :final-reads (vec nil)}
+             state (reduce (fn [{:keys [errors final-reads]              :as state}
                                 {:keys [f type value final? consistent?] :as txn}]
                              (case f
                                :read
                                (if (integer? value)
-                                 (assoc state
-                                        :read-range (if (nil? read-range)
-                                                      (acceptable-range value value)
-                                                      (.span read-range (acceptable-range value value)))
-                                        :errors     (if (or (not (if (or final?
-                                                                         consistent?)
-                                                                   (.contains acceptable value)
-                                                                   (.contains possible   value)))
-                                                            (not (.contains bounds value)))
-                                                      (conj errors
-                                                            txn)
-                                                      errors)
-                                        :final-reads (if final?
-                                                       (conj final-reads
-                                                             txn)
-                                                       final-reads))
+                                 (do
+                                   (.add read-values (acceptable-range value value))
+                                   (assoc state
+                                          :errors     (if (or (not (if (or final?
+                                                                           consistent?)
+                                                                     (.contains acceptable value)
+                                                                     (.contains possible   value)))
+                                                              (not (.contains bounds value)))
+                                                        (conj errors
+                                                              txn)
+                                                        errors)
+                                          :final-reads (if final?
+                                                         (conj final-reads
+                                                               txn)
+                                                         final-reads)))
                                  (assoc state
                                         :errors (conj errors txn)))
 
@@ -180,9 +172,7 @@
             :errors      (seq errors)
             :final-reads final-read-values
             :acceptable  (acceptable->vecs acceptable)
-            :read-range  (if (nil? read-range)
-                           []
-                           (range->vec read-range))
+            :read-range  (acceptable->vecs read-values)
             :bounds      (if (and (.hasLowerBound bounds)
                                   (.hasUpperBound bounds))
                            (range->vec bounds)
