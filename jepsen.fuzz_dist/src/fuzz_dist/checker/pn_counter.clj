@@ -103,7 +103,7 @@
              read-values (TreeRangeSet/create)
 
              txns  (->> history
-                        (filter #(or (and ((comp #{:add} :f) %)
+                        (filter #(or (and ((comp #{:increment :decrement} :f) %)
                                           (or (op/ok? %)
                                               (op/info? %)))
                                      (and ((comp #{:read} :f) %)
@@ -133,20 +133,23 @@
                                  (assoc state
                                         :errors (conj errors txn)))
 
-                               :add
+                               (:increment :decrement)
                                (do
-                                ; :ok   :add happened,
+                                ; :ok   :increment | :decrement happened,
                                 ;       recreate acceptable ranges as origninal plus delta.
                                 ; :info maybe happened,
                                 ;       leave existing acceptable ranges as is,
                                 ;       add new ranges of existing plus delta
                                 ; Always added to existing possible ranges.
                                 ; 
-                                ; At least one acceptable range must be in bounds after :add.
+                                ; At least one acceptable range must be in bounds after :increment | :decrement.
                                 ;
                                 ; Note we materialize asRanges to avoid iterating during our mutation!
                                  (let [orig-acceptable (vec (.asRanges acceptable))
-                                       orig-possible   (vec (.asRanges possible))]
+                                       orig-possible   (vec (.asRanges possible))
+                                       value           (if (= :increment f)
+                                                         value
+                                                         (* -1 value))]
                                    (if (= type :ok)
                                      (.clear acceptable))
                                    (doseq [^Range r orig-acceptable]
@@ -163,7 +166,7 @@
                                                   errors)))))
                            state
                            txns)]
-         (let [{:keys [errors, final-reads, read-range]} state
+         (let [{:keys [errors, final-reads]} state
                final-read-values (map :value final-reads)
                errors (if (>= 1 (count (distinct final-read-values)))
                         errors

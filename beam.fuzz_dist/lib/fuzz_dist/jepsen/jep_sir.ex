@@ -54,8 +54,11 @@ defmodule FuzzDist.Jepsen.JepSir do
         {"GSet", "read", _} ->
           Jepsen.GSet.read(antidote_conn)
 
-        {"PnCounter", "add", %{value: value}} ->
-          Jepsen.PNCounter.add(antidote_conn, value)
+        {"PnCounter", "increment", %{value: value}} ->
+          Jepsen.PNCounter.increment(antidote_conn, value)
+
+        {"PnCounter", "decrement", %{value: value}} ->
+          Jepsen.PNCounter.decrement(antidote_conn, value)
 
         {"PnCounter", "read", _} ->
           Jepsen.PNCounter.read(antidote_conn)
