@@ -1,5 +1,5 @@
-(ns fuzz-dist.checker.pn-counter
-  "A full checker for an eventually-consistent, optionally bounded,
+(ns fuzz-dist.tests.pn-counter
+  "Tests for an eventually-consistent, optionally bounded,
   [Positive-Negative Counter](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type#PN-Counter_(Positive-Negative_Counter)).
 
   Clients are `invoke!`'d with the operations:
@@ -35,12 +35,28 @@
   TODO: Track read 'staleness', delta between `:read` `:value` and acceptable values?
         Plot it?
   "
-  (:require [jepsen.checker :as checker]
+  (:require [jepsen
+             [checker :as checker]
+             [generator :as gen]]
             [knossos.op :as op]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (com.google.common.collect Range
                                       RangeSet
                                       TreeRangeSet)))
+
+(defn pn-counter-adds
+  "Random mix of `:increment` | `:decrement` a -1000 <= random `:value` <= 1000."
+  []
+  (fn [] {:type :invoke,
+          :f (rand-nth [:increment :decrement]),
+          :value (- 1000 (rand-int 2001))}))
+
+(defn pn-counter-reads
+  "Sequence of `:read`'s, optionally marked `:final? true`."
+  [final?]
+  (if final?
+    (repeat {:type :invoke, :f :read, :final? true, :value nil})
+    (repeat {:type :invoke, :f :read, :value nil})))
 
 (defn- range->vec
   "Converts an open range into a closed integer [lower upper] pair."
@@ -181,3 +197,26 @@
                            (range->vec bounds)
                            (.toString bounds))
             :possible    (acceptable->vecs possible)}))))))
+
+(defn test
+  "Constructs a partial test:
+  ```clojure
+  {:generator
+   :final-generator
+   :checker}
+  ```
+  given options from the CLI test constructor."
+  [opts]
+  {:generator (gen/mix [(pn-counter-adds)
+                        (pn-counter-reads false)])
+   :final-generator (gen/phases
+                     (gen/log "Let database quiesce...")
+                     (gen/sleep 10)
+
+                     (gen/log "Final read...")
+                     (->>
+                      (pn-counter-reads true)
+                      (gen/once)
+                      (gen/each-thread)
+                      (gen/clients)))
+   :checker (checker)})
