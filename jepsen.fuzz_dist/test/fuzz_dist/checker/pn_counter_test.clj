@@ -2,7 +2,7 @@
   (:require [clojure [pprint :refer [pprint]]
              [test :refer :all]]
             [jepsen.checker :as checker]
-            [fuzz-dist.checker.pn-counter :as pn-counter]))
+            [fuzz-dist.tests.pn-counter :as pn-counter]))
 
 (let [check        (fn [history] (checker/check (pn-counter/checker)                    {} history {}))
       check-bounds (fn [history] (checker/check (pn-counter/checker  {:bounds [0 100]}) {} history {}))]
