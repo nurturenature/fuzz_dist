@@ -4,11 +4,11 @@
 
   Clients are `invoke!`'d with the operations:
   ```clojure
-  {:type :invoke, :f :increment, :value integer}
-  {:type :invoke, :f :decrement, :value integer}
-  {:type :invoke, :f :read}                      ; eventually-consistent
-  {:type :invoke, :f :read, :consistent? true}   ; consistent
-  {:type :invoke, :f :read, :final? true}        ; final (assumed consistent)
+  {:type :invoke, :f :increment, :value [key integer]}
+  {:type :invoke, :f :decrement, :value [key integer]}
+  {:type :invoke, :f :read       :value [key nil]}                    ; eventually-consistent
+  {:type :invoke, :f :read,      :value [key nil], :consistent? true} ; consistent
+  {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
   ```
   
   Acceptable `:read` `:consistent?` | `:final?` `:value`'s are the sum of:
@@ -35,9 +35,11 @@
   TODO: Track read 'staleness', delta between `:read` `:value` and acceptable values?
         Plot it?
   "
+  (:refer-clojure :exclude [test])
   (:require [jepsen
              [checker :as checker]
-             [generator :as gen]]
+             [generator :as gen]
+             [independent :as independent]]
             [knossos.op :as op]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (com.google.common.collect Range
@@ -46,17 +48,17 @@
 
 (defn pn-counter-adds
   "Random mix of `:increment` | `:decrement` a -1000 <= random `:value` <= 1000."
-  []
+  [k]
   (fn [] {:type :invoke,
           :f (rand-nth [:increment :decrement]),
-          :value (- 1000 (rand-int 2001))}))
+          :value (independent/tuple k (- 1000 (rand-int 2001)))}))
 
 (defn pn-counter-reads
   "Sequence of `:read`'s, optionally marked `:final? true`."
-  [final?]
+  [k final?]
   (if final?
-    (repeat {:type :invoke, :f :read, :final? true, :value nil})
-    (repeat {:type :invoke, :f :read, :value nil})))
+    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil), :final? true})
+    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil)})))
 
 (defn- range->vec
   "Converts an open range into a closed integer [lower upper] pair."
@@ -207,16 +209,16 @@
   ```
   given options from the CLI test constructor."
   [opts]
-  {:generator (gen/mix [(pn-counter-adds)
-                        (pn-counter-reads false)])
+  {:generator (gen/mix [(pn-counter-adds  1)
+                        (pn-counter-reads 1 false)])
    :final-generator (gen/phases
                      (gen/log "Let database quiesce...")
                      (gen/sleep 10)
 
                      (gen/log "Final read...")
                      (->>
-                      (pn-counter-reads true)
+                      (pn-counter-reads 1 true)
                       (gen/once)
                       (gen/each-thread)
                       (gen/clients)))
-   :checker (checker)})
+   :checker (independent/checker (checker))})
