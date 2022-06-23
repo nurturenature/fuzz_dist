@@ -5,7 +5,9 @@
   (:require [clojure.tools.logging :refer :all]
             [fuzz-dist.client :as fd-client]
             [fuzz-dist.tests.pn-counter :as pn-counter]
-            [jepsen.client :as client]
+            [jepsen
+             [client :as client]
+             [independent :as independent]]
             [manifold.stream :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
 
@@ -31,11 +33,12 @@
                      "fail" (assoc op :type :fail, :error (:error resp))
                      "info" (assoc op :type :info, :error (:error resp))
                      (assoc op :type :info, :error (str resp))))
-      :read (let [resp (fd-client/ws-invoke conn :pn_counter :read op)]
-              (case (:type resp)
-                "ok"   (assoc op :type :ok,   :value (long (:value resp)))
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
+      :read (let [{:keys [type value error] :as resp} (fd-client/ws-invoke conn :pn_counter :read op)
+                  [k v] value]
+              (case type
+                "ok"   (assoc op :type :ok,   :value (independent/tuple k (long v)))
+                "fail" (assoc op :type :fail, :error error)
+                "info" (assoc op :type :info, :error error)
                 (assoc op :type :info, :error (str resp))))))
 
   (teardown! [this test])

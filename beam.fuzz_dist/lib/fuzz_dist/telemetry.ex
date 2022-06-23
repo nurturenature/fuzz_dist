@@ -94,7 +94,7 @@ defmodule FuzzDist.Telemetry do
       * :value - Value returned by read.
       * :error - Supplemental error information.
 
-  * `[:fuzz_dist, :pn_counter_add, :start]` - Executed on receipt of Jepsen :add operation.
+  * `[:fuzz_dist, :pn_counter_increment, :start]` - Executed on receipt of Jepsen :increment operation.
 
     #### Measurements
 
@@ -102,17 +102,39 @@ defmodule FuzzDist.Telemetry do
 
     #### Metadata:
 
-      * `value`: - The value to be added
+      * `value`: - The [key value] to be incremented
 
-  * `[:fuzz_dist, :pn_counter_add, :stop]` - Executed on completion of add before return to Jepsen.
+  * `[:fuzz_dist, :pn_counter_increment, :stop]` - Executed on completion of :increment before return to Jepsen.
 
     #### Measurements
 
-      * `:duration` - Duration of the read.
+      * `:duration` - Duration of the increment.
 
     #### Metadata:
 
-      * reply returned by add, may contain keys:
+      * reply returned by increment, may contain keys:
+      * :type  - :ok, :fail, :info.
+      * :error - Supplemental error information.
+
+  * `[:fuzz_dist, :pn_counter_decrement, :start]` - Executed on receipt of Jepsen :decrement operation.
+
+    #### Measurements
+
+      * `:system_time` - The system time
+
+    #### Metadata:
+
+      * `value`: - The [key value] to be decremented
+
+  * `[:fuzz_dist, :pn_counter_decrement, :stop]` - Executed on completion of :decrement before return to Jepsen.
+
+    #### Measurements
+
+      * `:duration` - Duration of the decrement.
+
+    #### Metadata:
+
+      * reply returned by decrement, may contain keys:
       * :type  - :ok, :fail, :info.
       * :error - Supplemental error information.
 
