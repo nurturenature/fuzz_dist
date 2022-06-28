@@ -1,9 +1,8 @@
 (ns fuzz-dist.client
   (:require [aleph.http :as http]
             [cheshire.core :as json]
-            [clojure.tools.logging :refer :all]
-            [manifold.stream :as s])
-  (:use [slingshot.slingshot :only [throw+]]))
+            [manifold.stream :as s]
+            [slingshot.slingshot :refer [throw+]]))
 
 (defn node-url
   "An HTTP url for connecting to a node's FuzzDist Elixir client."

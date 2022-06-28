@@ -2,24 +2,23 @@
   "An eventually-consistent counter which supports increments and decrements.
   Validates that the final read on each node has a value which is the sum of
   all known (or possible) increments and decrements."
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info]]
             [fuzz-dist.client :as fd-client]
             [fuzz-dist.tests.pn-counter :as pn-counter]
             [jepsen
              [client :as client]
              [independent :as independent]]
-            [manifold.stream :as s]
-            [slingshot.slingshot :refer [try+ throw+]]))
+            [manifold.stream :as s]))
 
 (defrecord PNCounterClient [conn]
   client/Client
-  (open! [this test node]
+  (open! [this _test node]
     (info "PNCounterClient/open" (fd-client/node-url node))
     (assoc this :conn (fd-client/get-ws-conn fd-client/node-url node)))
 
-  (setup! [this test])
+  (setup! [_this _test])
 
-  (invoke! [_ test op]
+  (invoke! [_ _test op]
     (case (:f op)
       :increment (let [resp (fd-client/ws-invoke conn :pn_counter :increment op)]
                    (case (:type resp)
@@ -41,9 +40,9 @@
                 "info" (assoc op :type :info, :error error)
                 (assoc op :type :info, :error (str resp))))))
 
-  (teardown! [this test])
+  (teardown! [_this _test])
 
-  (close! [_ test]
+  (close! [_this _test]
     (s/close! conn)))
 
 (defn workload

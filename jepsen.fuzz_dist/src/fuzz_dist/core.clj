@@ -236,7 +236,7 @@
                     [{:nemesis n}]
                     test-all-nemeses)
         counts    (range (:test-count opts))]
-    (for [w workloads, t topos, n nemeses, i counts]
+    (for [w workloads, t topos, n nemeses, _i counts]
       (-> opts
           (assoc :workload w
                  :topology t)
