@@ -97,13 +97,6 @@
 
     :else [nil nil]))
 
-(defn- range->tree-range-set
-  "Creates a new TreeRangeSet containing the given Range."
-  ^TreeRangeSet [^Range r]
-  (let [^TreeRangeSet trs (TreeRangeSet/create)]
-    (.add trs r)
-    trs))
-
 (defn- shift-range
   "Creates a new Range from existing Range + delta."
   ^Range [^Range r delta]
@@ -121,13 +114,9 @@
   (doseq [^Range r ranges]
     (.add trs r)))
 
-(def ^:private initial-range
-  "Counter starts at 0."
-  (bounds->range 0))
-
-(defn- acceptable->vecs
-  "Turns an acceptable TreeRangeSet into a vector of [lower upper] inclusive
-  ranges."
+(defn- tree-range-set->vecs
+  "Turns a TreeRangeSet of open Range's into a 
+  vector of closed, inclusive, [lower upper] ranges."
   [^TreeRangeSet s]
   (map range->vec (.asRanges s)))
 
@@ -135,7 +124,7 @@
   "Takes a history and returns a vector of inclusive :value ranges."
   [history]
   (let [^TreeRangeSet values-set (TreeRangeSet/create (map #(bounds->range (:value %)) history))]
-    (acceptable->vecs values-set)))
+    (tree-range-set->vecs values-set)))
 
 (defn- txn->delta
   "Given a transaction, returns `:value`/-`:value` for `:increment`/`:decrement`."
@@ -159,7 +148,7 @@
         (tree-range-set-adds trs))))
 
 (defn- add-txn-error
-  "Convience to add an error to a transaction, and add transaction to errors."
+  "Convenience to add an error to a transaction, and add transaction to errors."
   [msg txn errors]
   (->> msg
        (assoc txn :checker-error)
@@ -170,7 +159,7 @@
   ```clojure
   (checker {:bounds [lower upper]})
   ```
-  Default bounds are `[nil nil]`, IOW `(-∞..+∞)`.
+  Default bounds are `[nil nil]`, i.e. `(-∞..+∞)`.
 
   Returns:
   ```clojure
@@ -185,15 +174,14 @@
   ```
   "
   ([] (checker {}))
-  ([{bounds :bounds, :or {bounds [nil nil]}}]
+  ([{[lower upper] :bounds}]
    (reify checker/Checker
      (check [_this _test history _opts]
-       (let [[lower upper] bounds
-             ^Range bounds (bounds->range lower upper)
+       (let [^Range bounds (bounds->range lower upper)
 
              ; ! mutable data structures !
-             ^TreeRangeSet acceptable (range->tree-range-set initial-range)
-             ^TreeRangeSet possible   (range->tree-range-set initial-range)
+             ^TreeRangeSet acceptable (TreeRangeSet/create (Range/open 0 0))
+             ^TreeRangeSet possible   (TreeRangeSet/create (Range/open 0 0))
 
              txns  (->> history
                         (filter #(or ((comp #{:increment :decrement} :f) %)
@@ -201,7 +189,7 @@
                                           (op/ok? %)))))
              state (reduce
                     (fn [{:keys [errors open-txn] :as state}
-                         {:keys [f type value final? consistent? process] :as txn}]
+                         {:keys [f type value consistent? final? process] :as txn}]
                       (cond
                         (and (= :read f)
                              (not (integer? value)))
@@ -217,7 +205,7 @@
                           (cond
                             (not (.contains possible-open value))
                             (assoc state :errors
-                                   (add-txn-error (str "value not possible: " (vec (acceptable->vecs possible-open)))
+                                   (add-txn-error (str "value not possible: " (vec (tree-range-set->vecs possible-open)))
                                                   txn errors))
 
                             (not (.contains bounds value))
@@ -235,7 +223,7 @@
                           (cond
                             (not (.contains acceptable-open value))
                             (assoc state :errors
-                                   (add-txn-error (str "value not acceptable: " (vec (acceptable->vecs acceptable-open)))
+                                   (add-txn-error (str "value not acceptable: " (vec (tree-range-set->vecs acceptable-open)))
                                                   txn
                                                   errors))
 
@@ -292,25 +280,25 @@
              read-values (->> txns
                               (filter  #((comp #{:read} :f) %))
                               (history->value-ranges))
-             final-reads-values (map :value (->> txns
-                                                 (filter #(and ((comp #{:read} :f) %)
-                                                               (:final? %)))))
+             final-read-values (map :value (->> txns
+                                                (filter #(and ((comp #{:read} :f) %)
+                                                              (:final? %)))))
 
              errors  (:errors state)
-             errors (if (< 1 (count (distinct final-reads-values)))
-                      (conj errors {:checker-error "unequal final reads" :value final-reads-values})
+             errors (if (< 1 (count (distinct final-read-values)))
+                      (conj errors {:checker-error "unequal final reads" :value final-read-values})
                       errors)]
 
          {:valid?      (empty? errors)
           :errors      errors
-          :final-reads final-reads-values
-          :acceptable  (acceptable->vecs acceptable)
+          :final-reads final-read-values
+          :acceptable  (tree-range-set->vecs acceptable)
           :read-range  read-values
           :bounds      (if (and (.hasLowerBound bounds)
                                 (.hasUpperBound bounds))
                          (range->vec bounds)
                          (.toString bounds))
-          :possible    (acceptable->vecs possible)})))))
+          :possible    (tree-range-set->vecs possible)})))))
 
 (defn rand-value-generator
   "Returns a generator for random `:increment`/`:decrement` `:value`'s.
