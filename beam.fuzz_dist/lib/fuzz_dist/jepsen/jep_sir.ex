@@ -54,11 +54,14 @@ defmodule FuzzDist.Jepsen.JepSir do
         {"GSet", "read", _} ->
           Jepsen.GSet.read(antidote_conn)
 
-        {"PnCounter", "add", %{value: value}} ->
-          Jepsen.PNCounter.add(antidote_conn, value)
+        {"PnCounter", "increment", %{value: [key, value]}} ->
+          Jepsen.PNCounter.increment(antidote_conn, key, value)
 
-        {"PnCounter", "read", _} ->
-          Jepsen.PNCounter.read(antidote_conn)
+        {"PnCounter", "decrement", %{value: [key, value]}} ->
+          Jepsen.PNCounter.decrement(antidote_conn, key, value)
+
+        {"PnCounter", "read", %{value: [key, _value]}} ->
+          Jepsen.PNCounter.read(antidote_conn, key)
 
         {"Db", "setup_primary", %{topology: topology, nodes: nodes}} ->
           Jepsen.Db.setup_primary(topology, nodes)

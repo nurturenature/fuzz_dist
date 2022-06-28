@@ -4,20 +4,12 @@
   all known (or possible) increments and decrements."
   (:require [clojure.tools.logging :refer :all]
             [fuzz-dist.client :as fd-client]
-            [fuzz-dist.checker.pn-counter :as pn-counter]
+            [fuzz-dist.tests.pn-counter :as pn-counter]
             [jepsen
              [client :as client]
-             [generator :as gen]]
+             [independent :as independent]]
             [manifold.stream :as s]
             [slingshot.slingshot :refer [try+ throw+]]))
-
-(defn pn-counter-adds []
-  (fn [] {:type :invoke, :f :add, :value (- 1000 (rand-int 2001))}))
-
-(defn pn-counter-reads [final?]
-  (if final?
-    (repeat {:type :invoke, :f :read, :final? true, :value nil})
-    (repeat {:type :invoke, :f :read, :value nil})))
 
 (defrecord PNCounterClient [conn]
   client/Client
@@ -29,17 +21,24 @@
 
   (invoke! [_ test op]
     (case (:f op)
-      :add  (let [resp (fd-client/ws-invoke conn :pn_counter :add op)]
-              (case (:type resp)
-                "ok"   (assoc op :type :ok)
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
-                (assoc op :type :info, :error (str resp))))
-      :read (let [resp (fd-client/ws-invoke conn :pn_counter :read op)]
-              (case (:type resp)
-                "ok"   (assoc op :type :ok,   :value (long (:value resp)))
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
+      :increment (let [resp (fd-client/ws-invoke conn :pn_counter :increment op)]
+                   (case (:type resp)
+                     "ok"   (assoc op :type :ok)
+                     "fail" (assoc op :type :fail, :error (:error resp))
+                     "info" (assoc op :type :info, :error (:error resp))
+                     (assoc op :type :info, :error (str resp))))
+      :decrement (let [resp (fd-client/ws-invoke conn :pn_counter :decrement op)]
+                   (case (:type resp)
+                     "ok"   (assoc op :type :ok)
+                     "fail" (assoc op :type :fail, :error (:error resp))
+                     "info" (assoc op :type :info, :error (:error resp))
+                     (assoc op :type :info, :error (str resp))))
+      :read (let [{:keys [type value error] :as resp} (fd-client/ws-invoke conn :pn_counter :read op)
+                  [k v] value]
+              (case type
+                "ok"   (assoc op :type :ok,   :value (independent/tuple k (long v)))
+                "fail" (assoc op :type :fail, :error error)
+                "info" (assoc op :type :info, :error error)
                 (assoc op :type :info, :error (str resp))))))
 
   (teardown! [this test])
@@ -48,20 +47,11 @@
     (s/close! conn)))
 
 (defn workload
-  "Constructs a workload, {:client, :generator, :final-generator, :checker},
-   for a pn-counter, given options from the CLI test constructor."
+  "Constructs a workload:
+  ```clojure
+  {:client, :generator, :final-generator, :checker}
+  ```
+  for a pn-counter, given options from the CLI test constructor."
   [opts]
-  {:client (PNCounterClient. nil)
-   :generator (gen/mix [(pn-counter-adds)
-                        (pn-counter-reads false)])
-   :final-generator (gen/phases
-                     (gen/log "Let database quiesce...")
-                     (gen/sleep 10)
-
-                     (gen/log "Final read...")
-                     (->>
-                      (pn-counter-reads true)
-                      (gen/once)
-                      (gen/each-thread)
-                      (gen/clients)))
-   :checker (pn-counter/checker)})
+  (merge {:client (PNCounterClient. nil)}
+         (pn-counter/test opts)))

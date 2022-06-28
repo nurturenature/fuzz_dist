@@ -6,16 +6,18 @@ defmodule FuzzDist.Jepsen.PNCounter do
   alias FuzzDist.{Antidote, Telemetry}
   alias FuzzDist.Jepsen.JepSir
 
-  @callback add(antidote_conn :: pid(), value :: integer()) :: JepSir.antidote_return()
+  @callback increment(antidote_conn :: pid(), key :: term(), value :: integer()) ::
+              JepSir.antidote_return()
+  @callback decrement(antidote_conn :: pid(), key :: term(), value :: integer()) ::
+              JepSir.antidote_return()
+  @callback read(antidote_conn :: pid(), key :: term()) :: JepSir.antidote_return()
 
-  @callback read(antidote_conn :: pid()) :: JepSir.antidote_return()
-
-  @spec add(pid, integer) :: JepSir.jepsen_return()
-  def add(antidote_conn, value) do
-    start_time = Telemetry.start(:pn_counter_add, %{value: value})
+  @spec increment(pid, term, integer) :: JepSir.jepsen_return()
+  def increment(antidote_conn, key, value) do
+    start_time = Telemetry.start(:pn_counter_increment, %{value: [key, value]})
 
     reply =
-      case Antidote.PNCounter.add(antidote_conn, value) do
+      case Antidote.PNCounter.increment(antidote_conn, key, value) do
         :ok ->
           %{type: :ok}
 
@@ -36,14 +38,40 @@ defmodule FuzzDist.Jepsen.PNCounter do
     reply
   end
 
-  @spec read(pid) :: JepSir.jepsen_return()
-  def read(antidote_conn) do
-    start_time = Telemetry.start(:pn_counter_read)
+  @spec decrement(pid, term, integer) :: JepSir.jepsen_return()
+  def decrement(antidote_conn, key, value) do
+    start_time = Telemetry.start(:pn_counter_decrement, %{value: [key, value]})
 
     reply =
-      case Antidote.PNCounter.read(antidote_conn) do
+      case Antidote.PNCounter.decrement(antidote_conn, key, value) do
+        :ok ->
+          %{type: :ok}
+
+        {:error, :aborted} ->
+          %{type: :fail, error: :aborted}
+
+        {:error, :timeout} ->
+          %{type: :info, error: :timeout}
+
+        {:error, {:unknown, err_msg}} ->
+          {err_msg, _rest} = String.split_at(err_msg, 64)
+          err_msg = err_msg <> "..."
+          %{type: :info, error: err_msg}
+      end
+
+    Telemetry.stop(:pn_counter_add, start_time, reply)
+
+    reply
+  end
+
+  @spec read(pid, term) :: JepSir.jepsen_return()
+  def read(antidote_conn, key) do
+    start_time = Telemetry.start(:pn_counter_read, %{value: [key, nil]})
+
+    reply =
+      case Antidote.PNCounter.read(antidote_conn, key) do
         {:ok, value} ->
-          %{type: :ok, value: value}
+          %{type: :ok, value: [key, value]}
 
         {:error, :timeout} ->
           %{type: :info, error: :timeout}
