@@ -65,8 +65,8 @@
   "Takes a lower and upper *closed* bound (nil = infinity) and constructs a Range.
   The constructed Range will be an *open* range from
   lower - 1 to upper + 1, which ensures that merges work correctly."
-  ([value] (bounds->range value value))
-  ([lower upper]
+  (^Range [value] (bounds->range value value))
+  (^Range [lower upper]
    (assert (if (and lower upper)
              (<= lower upper)
              true))
@@ -99,14 +99,14 @@
 
 (defn- range->tree-range-set
   "Creates a new TreeRangeSet containing the given Range."
-  [^Range r]
-  (let [trs (TreeRangeSet/create)]
+  ^TreeRangeSet [^Range r]
+  (let [^TreeRangeSet trs (TreeRangeSet/create)]
     (.add trs r)
     trs))
 
 (defn- shift-range
   "Creates a new Range from existing Range + delta."
-  [^Range r delta]
+  ^Range [^Range r delta]
   (Range/open (+ (.lowerEndpoint r) delta)
               (+ (.upperEndpoint r) delta)))
 
@@ -134,7 +134,7 @@
 (defn- history->value-ranges
   "Takes a history and returns a vector of inclusive :value ranges."
   [history]
-  (let [values-set (TreeRangeSet/create (map #(bounds->range (:value %)) history))]
+  (let [^TreeRangeSet values-set (TreeRangeSet/create (map #(bounds->range (:value %)) history))]
     (acceptable->vecs values-set)))
 
 (defn- txn->delta
@@ -189,11 +189,11 @@
    (reify checker/Checker
      (check [_this _test history _opts]
        (let [[lower upper] bounds
-             bounds (bounds->range lower upper)
+             ^Range bounds (bounds->range lower upper)
 
              ; ! mutable data structures !
-             acceptable (range->tree-range-set initial-range)
-             possible   (range->tree-range-set initial-range)
+             ^TreeRangeSet acceptable (range->tree-range-set initial-range)
+             ^TreeRangeSet possible   (range->tree-range-set initial-range)
 
              txns  (->> history
                         (filter #(or ((comp #{:increment :decrement} :f) %)
@@ -211,7 +211,7 @@
 
                         (and (= :read f)
                              (not (or consistent? final?)))
-                        (let [possible-open (TreeRangeSet/create possible)
+                        (let [^TreeRangeSet possible-open (TreeRangeSet/create possible)
                               _ (doseq [txn (vals open-txn)]
                                   (grow-tree possible-open (txn->delta txn) false))]
                           (cond
@@ -229,7 +229,7 @@
 
                         (and (= :read f)
                              (or consistent? final?))
-                        (let [acceptable-open (TreeRangeSet/create acceptable)
+                        (let [^TreeRangeSet acceptable-open (TreeRangeSet/create acceptable)
                               _ (doseq [txn (vals open-txn)]
                                   (grow-tree acceptable-open (txn->delta txn) false))]
                           (cond

@@ -1,5 +1,5 @@
 (ns fuzz-dist.workload.g-set
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info]]
             [fuzz-dist.client :as fd-client]
             [fuzz-dist.checker.final-reads :as final-reads]
             [jepsen
@@ -18,13 +18,13 @@
 
 (defrecord GSetClient [conn]
   client/Client
-  (open! [this test node]
+  (open! [this _test node]
     (info "GSetClient/open" (fd-client/node-url node))
     (assoc this :conn (fd-client/get-ws-conn fd-client/node-url node)))
 
-  (setup! [this test])
+  (setup! [_this _test])
 
-  (invoke! [_ test op]
+  (invoke! [_this _test op]
     (case (:f op)
       :add  (let [resp (fd-client/ws-invoke conn :g_set :add op)]
               (case (:type resp)
@@ -40,9 +40,9 @@
                 "info" (assoc op :type :info, :error (:error resp))
                 (assoc op :type :info, :error (str resp))))))
 
-  (teardown! [this test])
+  (teardown! [_this _test])
 
-  (close! [_ test]
+  (close! [_this _test]
     (s/close! conn)))
 
 (defn workload

@@ -1,6 +1,6 @@
 (ns fuzz-dist.checker.pn-counter-test
-  (:require [clojure [pprint :refer [pprint]]
-             [test :refer :all]]
+  (:require [clojure
+             [test :refer [deftest is testing]]]
             [jepsen.checker :as checker]
             [fuzz-dist.tests.pn-counter :as pn-counter]))
 
