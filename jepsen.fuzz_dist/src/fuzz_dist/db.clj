@@ -1,5 +1,5 @@
 (ns fuzz-dist.db
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info]]
             [fuzz-dist
              [client :as fd-client]]
             [jepsen
@@ -8,8 +8,8 @@
             [jepsen.control
              [scp :as scp]
              [util :as cu]]
-            [manifold.stream :as s])
-  (:use [slingshot.slingshot :only [throw+]]))
+            [manifold.stream :as s]
+            [slingshot.slingshot :refer [throw+]]))
 
 (def node-antidote          "/root/antidote")
 (def antidote-log-file      "antidote.daemon.log")
@@ -28,7 +28,7 @@
 
 (defn db
   "AntidoteDB."
-  [version]
+  [_version]
   (reify db/DB
     (setup! [this test node]
       ;; cp antidote from control to node to install
@@ -56,10 +56,10 @@
     db/Primary
     ; Antidote doesn't have the concept of primary nodes.
     ; For Jepsen semantics, all Antidote nodes can be primaries.
-    (primaries [db test]
+    (primaries [_db test]
       (:nodes test))
 
-    (setup-primary! [db test node]
+    (setup-primary! [_db test node]
       ;; Setup Antidote by clustering data centers.
       (info "Clustering Antidote: " {:topology (:topology test)
                                      :nodes (nodes-to-fqdn (:nodes test) "antidote")})
@@ -76,7 +76,7 @@
         (s/close! conn)))
 
     db/LogFiles
-    (log-files [db test node]
+    (log-files [_db _test _node]
       {node-fuzz-dist-log-file fuzz-dist-log-file
        node-antidote-log-file  antidote-log-file
        (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors.log"
@@ -86,7 +86,7 @@
     ; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
     ; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
     ; Erlang process name is beam.smp
-    (start! [this test node]
+    (start! [_this test node]
       (if (cu/daemon-running? node-antidote-pid-file)
         :already-running
         (do
@@ -105,29 +105,28 @@
 
       (if (cu/daemon-running? node-fuzz-dist-pid-file)
         :already-running
-        (do
-          (c/su
-           (cu/start-daemon!
-            {:chdir node-fuzz-dist
-             :env {:NODE_NAME (n-to-fqdn node "fuzz_dist")
-                   :COOKIE "fuzz_dist"}
-             :logfile node-fuzz-dist-log-file
-             :pidfile node-fuzz-dist-pid-file}
-            "bin/fuzz_dist"
-            :start)
-           :restarted))))
+        (c/su
+         (cu/start-daemon!
+          {:chdir node-fuzz-dist
+           :env {:NODE_NAME (n-to-fqdn node "fuzz_dist")
+                 :COOKIE "fuzz_dist"}
+           :logfile node-fuzz-dist-log-file
+           :pidfile node-fuzz-dist-pid-file}
+          "bin/fuzz_dist"
+          :start)
+         :restarted)))
 
-    (kill! [this test node]
+    (kill! [_this _test _node]
       (c/su
        (cu/stop-daemon! node-fuzz-dist-pid-file)
        (cu/stop-daemon! node-antidote-pid-file)
        (cu/grepkill! "beam.smp")))
 
     db/Pause
-    (pause! [this test node]
+    (pause! [_this _test _node]
       (c/su
        (cu/grepkill! :stop "beam.smp")))
 
-    (resume! [this test node]
+    (resume! [_this _test _node]
       (c/su
        (cu/grepkill! :cont "beam.smp")))))

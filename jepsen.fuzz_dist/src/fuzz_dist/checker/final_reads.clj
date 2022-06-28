@@ -2,15 +2,13 @@
   "Checks a set-full history for :final? true reads and
   analyzes their consistency against all :ok :add's."
   (:require [clojure.set :refer [difference union]]
-            [clojure.tools.logging :refer :all]
             [jepsen.checker :as checker]
-            [knossos.op :as op]
-            [slingshot.slingshot :refer [try+ throw+]]))
+            [knossos.op :as op]))
 
 (defn checker
   []
   (reify checker/Checker
-    (check [this test history opts]
+    (check [_this _test history _opts]
       (let [final-reads (->> history
                              (filter (comp #{:read} :f))
                              (filter :final?)
