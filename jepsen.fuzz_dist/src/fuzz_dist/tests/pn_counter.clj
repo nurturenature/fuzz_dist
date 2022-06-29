@@ -11,30 +11,6 @@
   {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
   ```
   
-  *Acceptable* `:read` `:consistent?`/`:final?` `:value`'s are the sum of:
-
-  - all `:ok` `:increment`/`:decrement`
-  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
-  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
-
-  *Possible* `:read` `:value`'s when eventually-consistent are the sum of:
-
-  - any number of `:ok` `:increment`/`:decrement`
-  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
-  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
-
-  Verifies every:
-
-  - `:ok` `:read` `:value`
-      - is in the set of *possible* ranges
-      - is within bounds
-  - `:ok` `:read` `:consistent?`/`:final?` `:value` 
-      - is in the set of *acceptable* ranges
-      - is within bounds
-      - `:final?` `:value`'s are equal for all `:read`'s
-  - `:ok` `:increment`/`:decrement`
-      - *acceptable* counter value(s) remain within bounds
-
   TODO: Track read 'staleness', delta between `:read` `:value` and acceptable values?
         Plot it?
   "
@@ -46,20 +22,6 @@
             [knossos.op :as op])
   (:import (com.google.common.collect Range
                                       TreeRangeSet)))
-
-(defn pn-counter-adds
-  "Random mix of `ops`, e.g. `[:increment, :decrement]` with `:value [key, lower <= random <= upper]`."
-  [ops key [lower upper]]
-  (fn [] {:type :invoke,
-          :f (rand-nth ops),
-          :value (independent/tuple key (+ lower (rand-int (+ 1 (- upper lower)))))}))
-
-(defn pn-counter-reads
-  "Sequence of `:read`'s, optionally marked `:final? true`."
-  [k final?]
-  (if final?
-    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil), :final? true})
-    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil)})))
 
 (defn- bounds->range
   "Takes a lower and upper *closed* bound (nil = infinity) and constructs a Range.
@@ -157,9 +119,8 @@
 (defn checker
   "Can be optionally bounded:
   ```clojure
-  (checker {:bounds [lower upper]})
+  (checker {:bounds [lower upper]})  ; default [nil nil], i.e. (-∞..+∞)
   ```
-  Default bounds are `[nil nil]`, i.e. `(-∞..+∞)`.
 
   Returns:
   ```clojure
@@ -172,7 +133,31 @@
    :possible    [[lower upper], ...]] ; all possible Range's of :value's for an eventually-consistent :read
   }
   ```
-  "
+  
+  Verifies every:
+
+  - `:ok` `:read` `:value`
+      - is in the set of *possible* ranges
+      - is within bounds
+  - `:ok` `:read` `:consistent?`/`:final?` `:value` 
+      - is in the set of *acceptable* ranges
+      - is within bounds
+      - `:final?` `:value`'s are equal for all `:read`'s
+  - `:ok` `:increment`/`:decrement` `:value`
+      - *acceptable* counter value(s) remain within bounds
+ 
+  *Acceptable* `:read` `:consistent?`/`:final?` `:value`'s are the sum of:
+
+  - all `:ok` `:increment`/`:decrement`
+  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
+  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
+
+  *Possible* `:read` `:value`'s when eventually-consistent are the sum of:
+
+  - any number of `:ok` `:increment`/`:decrement`
+  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
+  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
+"
   ([] (checker {}))
   ([{[lower upper] :bounds}]
    (reify checker/Checker
@@ -180,8 +165,8 @@
        (let [^Range bounds (bounds->range lower upper)
 
              ; ! mutable data structures !
-             ^TreeRangeSet acceptable (TreeRangeSet/create (Range/open 0 0))
-             ^TreeRangeSet possible   (TreeRangeSet/create (Range/open 0 0))
+             ^TreeRangeSet acceptable (TreeRangeSet/create [(bounds->range 0 0)])
+             ^TreeRangeSet possible   (TreeRangeSet/create [(bounds->range 0 0)])
 
              txns  (->> history
                         (filter #(or ((comp #{:increment :decrement} :f) %)
@@ -300,29 +285,52 @@
                          (.toString bounds))
           :possible    (tree-range-set->vecs possible)})))))
 
+(defn- pn-counter-adds
+  "Random mix of `ops`, e.g. `[:increment, :decrement]` with `:value [key, lower <= random <= upper]`."
+  [ops key [lower upper]]
+  (fn [] {:type :invoke,
+          :f (rand-nth ops),
+          :value (independent/tuple key (+ lower (rand-int (+ 1 (- upper lower)))))}))
+
+(defn- pn-counter-reads
+  "Sequence of `:read`'s, optionally marked `:final? true`."
+  [k final?]
+  (if final?
+    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil), :final? true})
+    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil)})))
+
 (defn rand-value-generator
-  "Returns a generator for random `:increment`/`:decrement` `:value`'s.
-            
-  Generates `{:value [key, -value <= random <= value]}` operations."
+  "Generate random `:increment`/`:decrement` with random values.
+   
+  Returns a `generator/mix` of:
+   
+  - `:f (random :increment/:decrement) :value [key (-value <= random <= value)]`
+  - `:f :read :value [key nil]`"
   [key value]
   (gen/mix [(pn-counter-adds [:increment :decrement]  key [(* -1 value) value])
             (pn-counter-reads key false)]))
 
 (defn grow-only-generator
-  "Returns a generator for a monotonic counter, only `:increment` *or* `:decrement` `:value`'s.
-            
-  Generates `{:value [key, 0 <= random <= value]}` operations.
+  "Generator for a grow-only counter.
   
-  TODO: augment checker to test monotonicity per node"
+  Returns a `generator/mix` of
+   
+  - `:f (only :increment *or* :decrement) :value [key (0 <= random <= value)]`
+  - `:f :read :value [key nil]`
+   
+  TODO: augment checker to test monotonicity per process."
   [key value]
   (gen/mix [(pn-counter-adds  [(rand-nth [:increment :decrement])] key [0 value])
             (pn-counter-reads key false)]))
 
 (defn swing-value-generator
-  "Returns a generator that swings between trying to increase the counter with `:increment`'s,
+  "Generator that swings between trying to increase the counter with `:increment`'s,
   then decrease with `:decrement`s, then increase ...
 
-  Generates `{:value [key, 0 <= random <= value]}` operations."
+  Returns a `generator/mix` of
+   
+  - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= random <= value)]`
+  - `:f :read :value [key nil]`"
   [key value]
   (gen/cycle-times 10 (gen/mix [(pn-counter-adds [:increment]  key [0 value])
                                 (pn-counter-reads key false)])
@@ -332,22 +340,18 @@
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
   
-  - `:generator` is a mix of individual generators
-      - 1 generator / key
+  - `:generator` is a `generator/mix` of individual generators
+      - 1 generator / key, with  # keys = nodes * 2
       - each individual key generator:
-          - can use a different strategy to generate operations
+          - uses a different strategy to generate operations
+              - random, swing, grow-only
           - is active the entire time of the test
   - `:final-generator` is shared/common
       - quiesce
       - for every key, on every worker
           - `:read :final? true`
 
-  With:
-
-  - keys = # nodes * 2
-
-  A higher # keys makes for a more efficient test.
-  Set `:rate` >= # keys * # nodes * 2 for more effective coverage."
+  Suggest `:rate` >= # keys * nodes * 2 for more effective coverage."
   [opts]
   (let [num-keys (->> opts :nodes count (* 2))
         generators (reduce (fn [acc key]
@@ -377,7 +381,11 @@
    :final-generator
    :checker}
   ```
-  given options from the CLI test constructor."
+  given options from the CLI test constructor.
+   
+  Generators and checker are `independent`, e.g. key aware, `:value [key value]`.
+   
+  So clients must `:invoke!` ops with `:value [key value]`."
   [opts]
   (merge
    {:checker (independent/checker (checker))}
