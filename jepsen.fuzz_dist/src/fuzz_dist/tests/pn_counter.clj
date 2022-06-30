@@ -116,6 +116,28 @@
        (assoc txn :checker-error)
        (conj errors)))
 
+(defn- history->non-monotonic-reads
+  "Given a history, returns a vector of transactions that violate monotonic reads.
+  
+  `:read :monotonic? true :value [key value]` value's must be monotonic per process."
+  [history]
+  (let [{:keys [error-txns]}
+        (->> history
+             (filter #(and ((comp #{:read} :f) %)
+                           (op/ok? %)
+                           (:monotonic? %)))
+             (reduce
+              (fn [{:keys [last-reads error-txns] :as state} {:keys [process value] :or {process -1} :as txn}]
+                (let [prev  (get last-reads process)
+                      state (assoc state :last-reads (assoc last-reads process value))]
+                  (if (and prev
+                           (< (abs value) (abs prev)))
+                    (assoc state :error-txns (add-txn-error (str "non-monotonic read, prev: " prev) txn error-txns))
+                    state)))
+              {:last-reads  {}
+               :error-txns []}))]
+    error-txns))
+
 (defn checker
   "Can be optionally bounded:
   ```clojure
@@ -139,6 +161,7 @@
   - `:ok` `:read` `:value`
       - is in the set of *possible* ranges
       - is within bounds
+      - is increasing if `:monotonic? true`, e.g. grow-only-counter
   - `:ok` `:read` `:consistent?`/`:final?` `:value` 
       - is in the set of *acceptable* ranges
       - is within bounds
@@ -270,6 +293,7 @@
                                                               (:final? %)))))
 
              errors  (:errors state)
+             errors  (reduce (fn [acc txn] (conj acc txn)) errors (history->non-monotonic-reads history))
              errors (if (< 1 (count (distinct final-read-values)))
                       (conj errors {:checker-error "unequal final reads" :value final-read-values})
                       errors)]
@@ -293,11 +317,14 @@
           :value (independent/tuple key (+ lower (rand-int (+ 1 (- upper lower)))))}))
 
 (defn- pn-counter-reads
-  "Sequence of `:read`'s, optionally marked `:final? true`."
-  [k final?]
-  (if final?
-    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil), :final? true})
-    (repeat {:type :invoke, :f :read, :value (independent/tuple k nil)})))
+  "Sequence of `:read`'s, optionally marked `:flag? true`."
+  [k flags]
+  (fn []
+    (reduce (fn [txn flag] (assoc txn flag true))
+            {:type :invoke,
+             :f :read,
+             :value (independent/tuple k nil)}
+            flags)))
 
 (defn rand-value-generator
   "Generate random `:increment`/`:decrement` with random values.
@@ -308,7 +335,7 @@
   - `:f :read :value [key nil]`"
   [key value]
   (gen/mix [(pn-counter-adds [:increment :decrement]  key [(* -1 value) value])
-            (pn-counter-reads key false)]))
+            (pn-counter-reads key [])]))
 
 (defn grow-only-generator
   "Generator for a grow-only counter.
@@ -318,10 +345,10 @@
   - `:f (only :increment *or* :decrement) :value [key (0 <= random <= value)]`
   - `:f :read :value [key nil]`
    
-  TODO: augment checker to test monotonicity per process."
+  Transactions are augmented `:monotonic? true` for `checker` to validate."
   [key value]
   (gen/mix [(pn-counter-adds  [(rand-nth [:increment :decrement])] key [0 value])
-            (pn-counter-reads key false)]))
+            (pn-counter-reads key [:monotonic?])]))
 
 (defn swing-value-generator
   "Generator that swings between trying to increase the counter with `:increment`'s,
@@ -333,9 +360,9 @@
   - `:f :read :value [key nil]`"
   [key value]
   (gen/cycle-times 10 (gen/mix [(pn-counter-adds [:increment]  key [0 value])
-                                (pn-counter-reads key false)])
+                                (pn-counter-reads key [])])
                    10 (gen/mix [(pn-counter-adds [:decrement]  key [0 value])
-                                (pn-counter-reads key false)])))
+                                (pn-counter-reads key [])])))
 
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
@@ -369,7 +396,7 @@
                        (gen/log "Final reads...")
                        (->>
                         (map (fn [key]
-                               (gen/once (pn-counter-reads key true)))
+                               (gen/once (pn-counter-reads key [:final?])))
                              (keys generators))
                         (gen/each-thread)
                         (gen/clients)))}))
