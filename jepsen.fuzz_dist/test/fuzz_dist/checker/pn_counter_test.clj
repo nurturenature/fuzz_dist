@@ -193,4 +193,22 @@
                             {:type :ok,   :f :increment, :value 100}
                             {:type :ok,   :f :read, :value 200}
                             {:type :ok,   :f :read, :final? true, :value 100}
-                            {:type :ok,   :f :read, :final? true, :value 200}]))))))
+                            {:type :ok,   :f :read, :final? true, :value 200}])))))
+
+  ((deftest monotonic-test
+     (testing "monotonic-reads"
+       (is (= {:valid?      false
+               :errors      [{:type :ok, :f :read, :value 0, :process 1, :monotonic? true, :checker-error "non-monotonic read, prev: 1"}]
+               :final-reads [2]
+               :acceptable  [[2 3]]
+               :read-range  [[0 2]]
+               :bounds      "(-∞..+∞)"
+               :possible    [[0 3]]}
+              (check [{:type :ok,   :f :increment, :value 1}
+                      {:type :ok,   :f :read, :value 0, :process 1, :monotonic? true}
+                      {:type :ok,   :f :read, :value 1, :process 1, :monotonic? true}
+                      {:type :info, :f :increment, :value 1}
+                      {:type :ok,   :f :read, :value 0, :process 1, :monotonic? true}
+                      {:type :ok,   :f :read, :value 2, :process 1, :monotonic? true}
+                      {:type :ok,   :f :increment, :value 1}
+                      {:type :ok,   :f :read, :value 2, :process 1, :monotonic? true, :final? true}])))))))

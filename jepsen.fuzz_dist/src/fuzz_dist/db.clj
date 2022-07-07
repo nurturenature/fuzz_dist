@@ -64,14 +64,14 @@
       (info "Clustering Antidote: " {:topology (:topology test)
                                      :nodes (nodes-to-fqdn (:nodes test) "antidote")})
       (let [conn (fd-client/get-ws-conn fd-client/node-url node)]
-        (if (->>
-             (fd-client/ws-invoke conn
-                                  :db
-                                  :setup_primary {:topology (:topology test)
-                                                  :nodes (nodes-to-fqdn (:nodes test) "antidote")}
-                                  60000)
-             (:type)
-             (not= "ok"))
+        (when (->>
+               (fd-client/ws-invoke conn
+                                    :db
+                                    :setup_primary {:topology (:topology test)
+                                                    :nodes (nodes-to-fqdn (:nodes test) "antidote")}
+                                    60000)
+               (:type)
+               (not= "ok"))
           (throw+ [:type ::setup-failed]))
         (s/close! conn)))
 
@@ -82,7 +82,7 @@
        (str node-antidote "/" "logger_logs/errors.log") "antidote_logger_errors.log"
        (str node-antidote "/" "logger_logs/info.log")   "antidote_logger_info.log"})
 
-    db/Process
+    db/Kill
     ; Antidote,  Erlang, uses :forground to match start-daemon! semantics. 
     ; fuzz_dist, Elixir, uses :start     to match start-daemon! semantics.
     ; Erlang process name is beam.smp
