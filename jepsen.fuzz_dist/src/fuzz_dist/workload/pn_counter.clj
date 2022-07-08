@@ -7,8 +7,7 @@
             [fuzz-dist.tests.pn-counter :as pn-counter]
             [jepsen
              [client :as client]
-             [independent :as independent]]
-            [manifold.stream :as s]))
+             [independent :as independent]]))
 
 (defrecord PNCounterClient [conn]
   client/Client
@@ -43,7 +42,7 @@
   (teardown! [_this _test])
 
   (close! [_this _test]
-    (s/close! conn)))
+    (fd-client/ws-close conn)))
 
 (defn workload
   "Constructs a workload:

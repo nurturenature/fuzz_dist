@@ -14,8 +14,10 @@
   Exceptions are intentional to invalidate clients"
   ([url node] (get-ws-conn url node 1000))
   ([url node timeout]
-   (let [conn (deref (http/websocket-client (url node)) timeout nil)]
-     (if (not (nil? conn))
+   (let [conn {:ws   (deref (http/websocket-client (url node)) timeout nil)
+               :node node
+               :url  url}]
+     (if (not (nil? (:ws conn)))
        conn
        (throw+ [:type :info :error "Websocket client open failed, timeout?"])))))
 
@@ -25,33 +27,31 @@
   Be conservative, throw Exceptions, let this client crash
   to invalidate current op and get fresh client."
   ([conn mod fun op] (ws-invoke conn mod fun op 1000))
-  ([conn mod fun op timeout]
-   (if (not @(s/try-put! conn
-                         (json/generate-string
-                          {:mod mod
-                           :fun fun
-                           :args op})
-                         timeout))
+  ([{:keys [ws node url] :as _conn} mod fun op timeout]
+   (when (not @(s/try-put! ws
+                           (json/generate-string
+                            {:mod mod
+                             :fun fun
+                             :args op})
+                           timeout))
      (throw+ [:type :info
-              :error (str "Websocket put failed: " {:conn (->> conn
-                                                               s/description
-                                                               :sink
-                                                               :connection
-                                                               :remote-address)
+              :error (str "Websocket put failed: " {:conn [node url]
                                                     :mod mod
                                                     :fun fun
                                                     :args op})]))
 
-   (let [resp @(s/try-take! conn :fail timeout :timeout)]
+   (let [resp @(s/try-take! ws :fail timeout :timeout)]
      (case resp
        (:fail, :timeout) (throw+ [:type :info
                                   :error (str "Websocket take " resp " after putting: "
-                                              {:conn (->> conn
-                                                          s/description
-                                                          :source
-                                                          :connection
-                                                          :remote-address)
+                                              {:conn [node url]
                                                :mod mod
                                                :fun fun
                                                :args op})])
-       (json/parse-string resp true)))))
+       (assoc (json/parse-string resp true)
+              :node node)))))
+
+(defn ws-close
+  "Closes the websocket connection."
+  [{:keys [ws] :as _conn}]
+  (s/close! ws))
