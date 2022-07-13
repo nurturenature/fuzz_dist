@@ -8,7 +8,6 @@
             [jepsen.control
              [scp :as scp]
              [util :as cu]]
-            [manifold.stream :as s]
             [slingshot.slingshot :refer [throw+]]))
 
 (def node-antidote          "/root/antidote")
@@ -73,7 +72,7 @@
                (:type)
                (not= "ok"))
           (throw+ [:type ::setup-failed]))
-        (s/close! conn)))
+        (fd-client/ws-close conn)))
 
     db/LogFiles
     (log-files [_db _test _node]

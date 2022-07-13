@@ -5,8 +5,7 @@
             [jepsen
              [checker :as checker]
              [client :as client]
-             [generator :as gen]]
-            [manifold.stream :as s]))
+             [generator :as gen]]))
 
 (defn g-set-adds []
   (map (fn [x] {:type :invoke, :f :add, :value x}) (drop 1 (range))))
@@ -43,7 +42,7 @@
   (teardown! [_this _test])
 
   (close! [_this _test]
-    (s/close! conn)))
+    (fd-client/ws-close conn)))
 
 (defn workload
   "Constructs a workload, {:client, :generator, :final-generator, :checker},
