@@ -18,26 +18,27 @@
   (setup! [_this _test])
 
   (invoke! [_ _test op]
-    (case (:f op)
-      :increment (let [resp (fd-client/ws-invoke conn :pn_counter :increment op)]
-                   (case (:type resp)
-                     "ok"   (assoc op :type :ok)
-                     "fail" (assoc op :type :fail, :error (:error resp))
-                     "info" (assoc op :type :info, :error (:error resp))
-                     (assoc op :type :info, :error (str resp))))
-      :decrement (let [resp (fd-client/ws-invoke conn :pn_counter :decrement op)]
-                   (case (:type resp)
-                     "ok"   (assoc op :type :ok)
-                     "fail" (assoc op :type :fail, :error (:error resp))
-                     "info" (assoc op :type :info, :error (:error resp))
-                     (assoc op :type :info, :error (str resp))))
-      :read (let [{:keys [type value error] :as resp} (fd-client/ws-invoke conn :pn_counter :read op)
-                  [k v] value]
-              (case type
-                "ok"   (assoc op :type :ok,   :value (independent/tuple k (long v)))
-                "fail" (assoc op :type :fail, :error error)
-                "info" (assoc op :type :info, :error error)
-                (assoc op :type :info, :error (str resp))))))
+    (let [op (assoc op :node (:node conn))]
+      (case (:f op)
+        :increment (let [resp (fd-client/ws-invoke conn :pn_counter :increment op)]
+                     (case (:type resp)
+                       "ok"   (assoc op :type :ok)
+                       "fail" (assoc op :type :fail, :error (:error resp))
+                       "info" (assoc op :type :info, :error (:error resp))
+                       (assoc op :type :info, :error (str resp))))
+        :decrement (let [resp (fd-client/ws-invoke conn :pn_counter :decrement op)]
+                     (case (:type resp)
+                       "ok"   (assoc op :type :ok)
+                       "fail" (assoc op :type :fail, :error (:error resp))
+                       "info" (assoc op :type :info, :error (:error resp))
+                       (assoc op :type :info, :error (str resp))))
+        :read (let [{:keys [type value error] :as resp} (fd-client/ws-invoke conn :pn_counter :read op)
+                    [k v] value]
+                (case type
+                  "ok"   (assoc op :type :ok,   :value (independent/tuple k (long v)))
+                  "fail" (assoc op :type :fail, :error error)
+                  "info" (assoc op :type :info, :error error)
+                  (assoc op :type :info, :error (str resp)))))))
 
   (teardown! [_this _test])
 
