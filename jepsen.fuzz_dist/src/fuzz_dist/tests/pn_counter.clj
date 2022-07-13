@@ -15,7 +15,8 @@
         Plot it?
   "
   (:refer-clojure :exclude [test])
-  (:require [jepsen
+  (:require [fuzz-dist.checker.offset :as offset]
+            [jepsen
              [checker :as checker]
              [generator :as gen]
              [independent :as independent]]
@@ -128,35 +129,198 @@
         (grow-tree clone (txn->delta op))))
     clone))
 
-(defn- add-txn-error
-  "Convenience to add an error to a transaction, and add transaction to errors."
-  [msg txn errors]
-  (->> msg
-       (assoc txn :checker-error)
-       (conj errors)))
+(defn- history->counter-ranges
+  "Augment all :read :ok and :increment :ok/:info ops with:
+    :counter-ranges [counter, process]  ; ranges of all possible valid values during lifetime of op"
+  ([history]
+   (let [; ! mutable data structures !
+         ; acceptable counter range(s)
+         counter (TreeRangeSet/create [(vec->range [0 0])])
+         ; each process has its own PoV that includes:
+         ;   - :ok ops it did that happened
+         ;   - :info ops it did that maybe? happened
+         ;   - possibly any combination of :ok/:info ops done by other processes 
+         process-views (->> (history/processes history)
+                            (reduce (fn [acc p]
+                                      (assoc acc p (TreeRangeSet/create [(vec->range [0 0])])))
+                                    {}))]
+     ; loop op by op
+     ; - tracking open ops
+     ; - updating counter and process PoV TreeRangeSets
+     (loop [history       history
+            open-ops      {}               ; {p op}
+            history'      (transient [])]  ; augmented history
+       (cond
+         (nil? history)
+         (persistent! history')
 
-(defn- history->non-monotonic-reads
-  "Given a history, returns a vector of transactions that violate monotonic reads.
-  
-  `:read :monotonic? true :value [key value]` value's must be monotonic per process."
+         :else ; op by op...
+         (let [{:keys [process type f value] :as op} (first history)
+               history (next  history)]
+
+           (case [type f]
+             [:invoke :read]
+             ; open read op
+             ;   - init :counter-ranges to counter, this process's view, plus any possible number of open :increments
+             (do
+               (assert (not (contains? open-ops process)) "Process already open!")
+               (let [counter-ranges [(clone-tree counter                     (vals open-ops))
+                                     (clone-tree (get process-views process) (vals open-ops))]
+                     open-ops    (assoc open-ops
+                                        process (assoc op :counter-ranges counter-ranges))
+                     history'    (conj! history' op)]
+                 (recur history open-ops history')))
+
+             [:ok :read]
+             ; close open op, augment op with :counter-ranges from open op
+             (do
+               (assert (contains? open-ops process) "Process not open!")
+               (let [counter-ranges (get-in open-ops [process :counter-ranges])
+                     open-ops       (dissoc open-ops process)
+                     op'            (assoc op :counter-ranges counter-ranges)
+                     history'       (conj! history' op')]
+                 (recur history open-ops history')))
+
+             [:invoke :increment]
+             ; update any open ops to include the possibility of seeing this increment
+             ; open :increment op with :counter-ranges init to:
+             ;   counter and this process's view, with any possible number of open :increments
+             ;   plus this op too
+             (do
+               (assert (not (contains? open-ops process)) "Process already open!")
+               (let [_        (doseq [[_p {:keys [counter-ranges]}] open-ops]
+                                (let [[ctr-ranges p-ranges] counter-ranges]
+                                  (grow-tree ctr-ranges value)
+                                  (grow-tree p-ranges   value)))
+                     ; this op, in addition to the existing open ops, counts in init counter-ranges
+                     [ctr-ranges, p-ranges] [(clone-tree counter                     (conj (vals open-ops) op))
+                                             (clone-tree (get process-views process) (vals open-ops))]
+                     _ (shift-tree p-ranges value) ; we see ourself
+                     open-ops (assoc open-ops process (assoc op :counter-ranges [ctr-ranges p-ranges]))
+                     history' (conj! history' op)]
+                 (recur history open-ops history')))
+
+             [:info :increment]
+             ; update counter and all process PoVs as maybe?
+             ; copy :counter-ranges from open op to augmented op
+             ; close open op
+             (do
+               (assert (contains? open-ops process) "Process not open!")
+               (let [_ (grow-tree counter value)
+                     _ (doseq [[_p possible] process-views]
+                         (grow-tree possible value))
+                     counter-ranges (get-in open-ops [process :counter-ranges])
+                     op'      (assoc op :counter-ranges  counter-ranges)
+                     open-ops (dissoc open-ops process)
+                     history' (conj! history' op')]
+                 (recur history open-ops history')))
+
+             [:ok :increment]
+             ; op happened so shift counter, same for this process PoV,
+             ;   but all other process Povs are maybe? due to eventually...
+             ; copy :counter-ranges from open op to augmented op
+             ; close open op
+             (do
+               (assert (contains? open-ops process) "Process not open!")
+               (let [_ (shift-tree counter value)
+                     _ (doseq [[p possible] process-views]
+                         (if (= p process)
+                           (shift-tree possible value)
+                           (grow-tree possible value)))
+                     counter-ranges (get-in open-ops [process :counter-ranges])
+                     op'      (assoc op :counter-ranges  counter-ranges)
+                     open-ops (dissoc open-ops process)
+                     history' (conj! history' op')]
+                 (recur history open-ops history')))
+
+             ; ignore
+             (let [history' (conj! history' op)]
+               (recur history open-ops history')))))))))
+
+(defn- history->counter-offsets
+  "Augment a history with :read :counter-offsets {node offset}
+   by interpreting :counter-ranges [counter process].
+   Offset is the delta of the :value from either the lower or upper bounds
+   of the acceptable counter range during the op."
   [history]
-  (let [{:keys [error-txns]}
-        (->> history
-             (filter #(and ((comp #{:read} :f) %)
-                           (op/ok? %)
-                           (:monotonic? %)))
-             (remove #(nil? (:process %)))
-             (reduce
-              (fn [{:keys [last-reads error-txns] :as state} {:keys [process value] :as txn}]
-                (let [prev  (get last-reads process)
-                      state (assoc state :last-reads (assoc last-reads process value))]
-                  (if (and prev
-                           (< (abs value) (abs prev)))
-                    (assoc state :error-txns (add-txn-error (str "non-monotonic read, prev: " prev) txn error-txns))
-                    state)))
-              {:last-reads  {}
-               :error-txns []}))]
-    error-txns))
+  (->> history
+       (map (fn [{:keys [f type value counter-ranges node] :as op}]
+              (if (and (= :read f)
+                       (= :ok type)
+                       (not (nil? counter-ranges))
+                       (not (nil? node)))
+                (let [[ctr-ranges _p-ranges] counter-ranges
+                      read-offset (let [[lower upper]  (range->vec (.span ctr-ranges))]
+                                    (cond
+                                      (and (<= lower value)
+                                           (<= value upper))
+                                      0
+
+                                      (< value lower)
+                                      (- value lower)
+
+                                      (< upper value)
+                                      (- value upper)))]
+                  (assoc op :counter-offsets {node read-offset}))
+                op)))))
+
+(defn- history->previous-reads
+  "Given a history, returns a history with ok read ops augmented with :checker-prev-read.
+   Reads are tracked per process."
+  [history]
+  (loop [history    history
+         prev-reads {}      ; {process prev-read-value ...}
+         history'   []]
+    (cond
+      (nil? history)
+      history'
+
+      :else ; op by op...
+      (let [{:keys [type f value monotonic? process] :as op} (first history)
+            history (next  history)]
+        (if (and (= :read f)
+                 (= :ok type)
+                 monotonic?
+                 process)
+          (let [prev-read (get prev-reads process)
+                prev-reads (assoc prev-reads process value)
+                op' (assoc op :checker-prev-read prev-read)
+                history' (conj history' op')]
+            (recur history prev-reads history'))
+          (let [history' (conj history' op)]
+            (recur history prev-reads history')))))))
+
+(defn history->check-final-reads
+  "Checks given history for valid final reads:
+    - there are final? reads
+    - all reads agree on counter ranges
+    - all reads equal
+  {:valid? true/false
+   :final-reads [...]
+   :counter [...]}"
+  [history]
+  (let [finals (->> history (filter #(and ((comp #{:read} :f) %)
+                                          (:final? %)
+                                          ((comp #{:ok} :type) %))))
+        counters (->> finals (map (fn [{[ctr-range _p-range] :counter-ranges}]
+                                    ctr-range)))
+        counter (->> counters first)
+        values (->> finals (map :value))
+        errors (cond-> nil
+                 (not (seq finals))
+                 (conj {:checker-error :no-final-reads})
+
+                 (-> counters set count (> 1))
+                 (conj {:checker-error :final-counters-not-equal})
+
+                 (-> values set count (> 1))
+                 (conj {:checker-error :final-reads-not-equal}))]
+
+    (assoc (if (nil? errors)
+             {:valid? true}
+             {:valid? false :errors errors})
+           :final-reads values
+           :counter (tree-range-set->vecs counter))))
 
 (defn checker
   "Can be optionally bounded:
@@ -202,12 +366,12 @@
   - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
 "
   ([] (checker {}))
-  ([{bounds :bounds}]
+  ([{bounds :bounds :as opts}]
    (reify checker/Checker
-     (check [_this _test history _opts]
-       (let [^Range bounds (vec->range bounds)
+     (check [_this test history opts']
+       (let [opts (merge opts opts')
+             ^Range bounds (vec->range bounds)
              history (->> history
-                          (remove #(= :nemesis (:process %)))
                           history/complete
                           history/without-failures)
              ; remove read infos and their invokes
@@ -226,138 +390,89 @@
                                           :value (* -1 value))
                                    op)))
                           vec)
+             ; augment 
+             ;  - :ok/:info ops with :counter-ranges [counter process]
+             ;  - :read :ok with :counter-offsets {node offset}, :checker-prev-read
+             history (->> history
+                          history->counter-ranges
+                          history->counter-offsets
+                          history->previous-reads
+                          vec)
 
+             ; loop op by op
+             ; - testing values and building a sequence of any ops with errors
+             errors
+             (loop [history history
+                    errors  []]
+               (cond
+                 (nil? history)
+                 (->> errors ; remove augmented processing keys for readability
+                      (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read))))
+
+                 :else ; op by op...
+                 (let [{:keys [type f value consistent? final? monotonic? counter-ranges checker-prev-read] :as op} (first history)
+                       history (next  history)
+                       [ctr-ranges p-ranges] counter-ranges]
+
+                   (case [type f]
+                     [:ok :read]
+                     ; read value possible for this process during time op was open?
+                     ; :consistent?/:final? must also be in counter range
+                     ; :monotonic? must absolutely grow
+                     ; always in bounds
+                     (let [errors (cond-> errors
+                                    (not (.contains p-ranges value))
+                                    (conj (assoc op :checker-error :value-not-possible))
+
+                                    (and (or consistent? final?)
+                                         (not (.contains ctr-ranges value)))
+                                    (conj (assoc op :checker-error :value-not-acceptable))
+
+                                    (and monotonic?
+                                         (and checker-prev-read
+                                              (< (abs value) (abs checker-prev-read))))
+                                    (conj (assoc op :checker-error :value-not-monotonic))
+
+                                    (not (.contains bounds value))
+                                    (conj (assoc op :checker-error :value-out-of-bounds)))]
+                       (recur history errors))
+
+                     [:info :increment]
+                     ; maybe? op occured, so can't test out of bounds 
+                     (recur history errors)
+
+                     [:ok :increment]
+                     ; op occured, counter and process were updated, so
+                     ; are process and counter values still within bounds
+                     (let [errors (cond-> errors
+                                    (not (.intersects ctr-ranges bounds))
+                                    (conj (assoc op
+                                                 :checker-error :counter-out-of-bounds))
+
+                                    (not (.intersects p-ranges bounds))
+                                    (conj (assoc op
+                                                 :checker-error :process-out-of-bounds)))]
+                       (recur history errors))
+
+                     ; ignore
+                     (recur history errors)))))
+
+             final-reads (history->check-final-reads history)
              read-values (->> history
                               (filter  #(and ((comp #{:read} :f) %)
                                              ((comp #{:ok} :type) %)))
                               (history->value-ranges))
+             plot     (offset/plot! test history (merge opts {:offset-key :counter-offsets
+                                                              :plot-title (str  "Counter Offsets for Key: " (:history-key opts))}))]
 
-             final-read-values (map :value (->> history
-                                                (filter #(and ((comp #{:read} :f) %)
-                                                              (:final? %)
-                                                              ((comp #{:ok} :type) %)))))
-
-             ; ! mutable data structures !
-             ; acceptable counter range(s)
-             ^TreeRangeSet counter (TreeRangeSet/create [(vec->range [0 0])])
-             ; each process has its own PoV
-             ;   - the ops it did for sure, and
-             ;   - possibly any combination of ops done by other processes 
-             process-views (->> (history/processes history)
-                                (reduce (fn [acc p]
-                                          (assoc acc p (TreeRangeSet/create [(vec->range [0 0])])))
-                                        {}))
-
-             ; loop op by op
-             ; - tracking open ops
-             ; - updating counter and process PoV TreeRangeSets
-             ; - testing values and building a sequence of any ops with errors
-             errors (loop [history       history
-                           open-ops      {}            ; {p op}
-                           process-views process-views ; {p possible-ranges}
-                           errors        []]
-                      (cond
-                        (and (nil? history) (empty? open-ops))
-                        errors
-
-                        (and (nil? history) (seq open-ops))
-                        (concat errors
-                                (->> open-ops
-                                     (map (fn [op]
-                                            (assoc op :checker-error :uncompleted-op)))))
-
-                        :else ; op by op...
-                        (let [{:keys [process type f value consistent? final?] :as op} (first history)
-                              history (next  history)]
-
-                          (case [type f]
-                            [:invoke :read]
-                            ; open read op with :checker-valids init to this process's view, plus any possible number of open :increments
-                            (do
-                              (assert (not (contains? open-ops process)) "Process already open!")
-                              (let [valid-reads (clone-tree (get process-views process) (vals open-ops))
-                                    open-ops    (assoc open-ops
-                                                       process (assoc op :checker-valids valid-reads))]
-                                (recur history open-ops process-views errors)))
-
-                            [:ok :read]
-                            ; read value possible/acceptable during the time transaction was open?, close open op
-                            (do
-                              (assert (contains? open-ops process) "Process not open!")
-                              (let [errors (case [(.contains (get-in open-ops [process :checker-valids]) value)
-                                                  (or (not (or consistent? final?))
-                                                      (.contains counter value))]
-                                             [true  true]  errors
-                                             [false true]  (conj errors (assoc op
-                                                                               :checker-error :value-not-possible
-                                                                               :checker-valids (tree-range-set->vecs (get-in open-ops [process :checker-valids]))))
-                                             [true  false] (conj errors (assoc op
-                                                                               :checker-error :value-not-acceptable
-                                                                               :checker-valids (tree-range-set->vecs counter)))
-                                             [false false] (conj errors (assoc op
-                                                                               :checker-error [:value-not-possible :value-not-acceptable]
-                                                                               :checker-valids [(tree-range-set->vecs (get-in open-ops [process :checker-valids]))
-                                                                                                (tree-range-set->vecs counter)]))
-                                             errors)
-                                    errors (if (not (.contains bounds value))
-                                             (conj errors (assoc op :checker-error :value-out-of-bounds))
-                                             errors)
-                                    open-ops (dissoc open-ops process)]
-                                (recur history open-ops process-views errors)))
-
-                            [:invoke :increment]
-                              ; open :increment transaction, update any open reads to include the possibility of seeing this increment
-                            (do
-                              (assert (not (contains? open-ops process)) "Process already open!")
-                              (let [open-ops (assoc open-ops process op)
-                                    _        (doseq [[_p {:keys [f checker-valids]}] open-ops]
-                                               (when (= :read f)
-                                                 (grow-tree checker-valids value)))]
-                                (recur history open-ops process-views errors)))
-
-                            [:info :increment]
-                            ; close :increment transaction, update counter as maybe, and all process as possibles
-                            (do
-                              (assert (contains? open-ops process) "Process not open!")
-                              (let [open-ops (dissoc open-ops process)
-                                    _ (grow-tree counter value)
-                                    _ (doseq [[_p possible] process-views]
-                                        (grow-tree possible value))
-                                    ; no bounds check, op is a maybe?
-                                    ]
-                                (recur history open-ops process-views errors)))
-
-                            [:ok :increment]
-                              ; close :increment transaction, shift counter as trans happened, same for this process, and all other process are possibles
-                            (do
-                              (assert (contains? open-ops process) "Process not open!")
-                              (let [open-ops (dissoc open-ops process)
-                                    _ (shift-tree counter value)
-                                    _ (doseq [[p possible] process-views]
-                                        (if (= p process)
-                                          (shift-tree possible value)
-                                          (grow-tree possible value)))
-                                    errors (if (not (.intersects counter bounds))
-                                             (conj errors (assoc op
-                                                                 :checker-error :counter-out-of-bounds
-                                                                 :checker-valids (tree-range-set->vecs counter)))
-                                             errors)]
-                                (recur history open-ops process-views errors)))
-
-                            (let [errors (conj errors (assoc op :checker-error :unknown-op))]
-                              (recur history open-ops process-views errors))))))
-
-             errors  (reduce (fn [acc txn] (conj acc txn)) errors (history->non-monotonic-reads history))
-             errors  (if (< 1 (count (distinct final-read-values)))
-                       (conj errors {:checker-error :unequal-final-reads :final-reads final-read-values})
-                       errors)]
-
-         {:valid?      (empty? errors)
+         {:valid?      (and (empty? errors)
+                            (:valid? final-reads)
+                            (:valid? plot))
           :errors      errors
-          :final-reads final-read-values
-          :acceptable  (tree-range-set->vecs counter)
+          :final-reads final-reads
           :read-range  read-values
-          :bounds      (range->vec bounds)})))))
+          :bounds      (range->vec bounds)
+          :plot        plot})))))
 
 (defn- pn-counter-adds
   "Random mix of `ops`, e.g. `[:increment, :decrement]` with `:value [key, lower <= random <= upper]`."
@@ -430,7 +545,8 @@
 
   Suggest `:rate` >= # keys * nodes * 4 for more effective coverage."
   [opts]
-  (let [num-keys (->> opts :nodes count)
+  (let [num-nodes (->> opts :nodes count)
+        num-keys  num-nodes
         generators (reduce (fn [acc key]
                              (let [[k g] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  1000)]
                                                     [(str key "-grow")  (grow-only-generator   (str key "-grow")  1000)]
@@ -440,8 +556,15 @@
                            (range 1 (+ 1 num-keys)))]
     {:generator (gen/mix (vals generators))
      :final-generator (gen/phases
-                       (gen/log "Let database quiesce...")
-                       (gen/sleep 10)
+                       (gen/log "Let database quiesce, slow rate of reads only...")
+                       (->>
+                        (fn []
+                          (gen/once (pn-counter-reads (rand-nth (keys generators)) [])))
+                        (gen/clients)
+                        (gen/stagger (/ 1 (* num-keys num-nodes)))
+                        (gen/time-limit 10))
+
+                       (gen/sleep 1)
 
                        (gen/log "Final reads...")
                        (->>
@@ -465,5 +588,8 @@
   So clients must `:invoke!` ops with `:value [key value]`."
   [opts]
   (merge
-   {:checker (independent/checker (checker))}
+   {:checker (fn pn-checker ; support passing opts in test map, e.g. perf map for nemeses
+               ([] (pn-checker {}))
+               ([opts']
+                (independent/checker (checker (merge opts opts')))))}
    (mix-generator opts)))

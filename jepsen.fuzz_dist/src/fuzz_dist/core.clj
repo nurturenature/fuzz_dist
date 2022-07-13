@@ -113,7 +113,8 @@
             :nemesis    (:nemesis package)
             :generator  (combine-workload-package-generators opts workload package)
             :checker    (checker/compose
-                         {:workload   (:checker workload)
+                         {:workload   ((:checker workload)
+                                       {:nemeses (:perf package)})
                           :perf       (checker/perf
                                        {:nemeses (:perf package)})
                           :timeline   (timeline/html)
