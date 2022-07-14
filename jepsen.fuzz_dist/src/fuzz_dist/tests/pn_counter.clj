@@ -539,8 +539,8 @@ all `:reads`
   - `:f :read :value [key nil]`
    
   Transactions are augmented `:monotonic? true` for `checker` to validate."
-  [key]
-  (gen/mix [(pn-counter-adds-fib  [(rand-nth [:increment :decrement])] key)
+  [key value]
+  (gen/mix [(pn-counter-adds [(rand-nth [:increment :decrement])] key [0 value])
             (pn-counter-reads key [:monotonic?])]))
 
 (defn swing-value-generator
@@ -578,7 +578,7 @@ all `:reads`
         num-keys  num-nodes
         generators (reduce (fn [acc key]
                              (let [[k g] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  1000)]
-                                                    [(str key "-grow")  (grow-only-generator   (str key "-grow"))]
+                                                    [(str key "-grow")  (grow-only-generator   (str key "-grow")  1000)]
                                                     [(str key "-swing") (swing-value-generator (str key "-swing") 1000)]])]
                                (assoc acc k g)))
                            {}
