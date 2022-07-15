@@ -137,6 +137,12 @@
         (grow-tree clone (txn->delta op))))
     clone))
 
+(defn- clean-ops
+  "Removes augmented keys from given ops."
+  [ops]
+  (->> ops ; remove augmented processing keys for readability
+       (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read)))))
+
 (defn- history->counter-ranges
   "Augment all :read :ok and :increment :ok/:info ops with:
     :counter-ranges [counter, process]  ; ranges of all possible valid values during lifetime of op"
@@ -300,13 +306,15 @@
 
 (defn- history->check-final-reads
   "Checks given history for valid final reads:
-    - there are final? reads
-    - all reads agree on counter ranges
-    - all reads equal
+    - must be final? read from all nodes
+    - all reads must agree on counter ranges
+    - all reads must be equal
+  May return suspicious op's, e.g. increment value = read offset from counter.  
   {:valid? true/false
-   :final-reads [...]
-   :counter [...]}"
-  [history]
+   :final-reads [value, ...]
+   :counter [range, ...]
+   :suspicious [op, ...]}"
+  [history {:keys [nodes] :as _test}]
   (let [finals (->> history (filter #(and ((comp #{:read} :f) %)
                                           (:final? %)
                                           ((comp #{:ok} :type) %))))
@@ -315,20 +323,32 @@
         counter (->> counters first)
         values (->> finals (map :value))
         errors (cond-> nil
-                 (not (seq finals))
-                 (conj {:checker-error :no-final-reads})
+                 (not= (count finals) (count nodes))
+                 (conj {:checker-error :missing-final-reads})
 
                  (-> counters set count (> 1))
                  (conj {:checker-error :final-counters-not-equal})
 
                  (-> values set count (> 1))
-                 (conj {:checker-error :final-reads-not-equal}))]
+                 (conj {:checker-error :final-reads-not-equal}))
+        suspicious (->> finals
+                        (filter (fn [{:keys [counter-offsets node]}]
+                                  (not= 0 (get counter-offsets node))))
+                        (reduce (fn [acc {:keys [counter-offsets node]}]
+                                  (->> history
+                                       (filter #(and ((comp #{:increment} :f) %)
+                                                     (= (abs (get counter-offsets node)) (abs (:value %)))))
+                                       (concat acc)))
+                                nil)
+                        clean-ops
+                        vec)]
 
     (assoc (if (nil? errors)
              {:valid? true}
              {:valid? false :errors errors})
            :final-reads values
-           :counter (tree-range-set->vecs counter))))
+           :counter (tree-range-set->vecs counter)
+           :suspicious suspicious)))
 
 (defn checker
   "Can be optionally bounded:
@@ -435,7 +455,7 @@ all `:reads`
                (cond
                  (nil? history)
                  (->> errors ; remove augmented processing keys for readability
-                      (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read))))
+                      clean-ops)
 
                  :else ; op by op...
                  (let [{:keys [type f value consistent? final? monotonic? counter-ranges checker-prev-read] :as op} (first history)
@@ -485,7 +505,7 @@ all `:reads`
                      ; ignore
                      (recur history errors)))))
 
-             final-reads (history->check-final-reads history)
+             final-reads (history->check-final-reads history test)
              read-values (->> history
                               (filter  #(and ((comp #{:read} :f) %)
                                              ((comp #{:ok} :type) %)))
@@ -576,19 +596,22 @@ all `:reads`
   [opts]
   (let [num-nodes (->> opts :nodes count)
         num-keys  num-nodes
-        generators (reduce (fn [acc key]
-                             (let [[k g] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  1000)]
-                                                    [(str key "-grow")  (grow-only-generator   (str key "-grow")  1000)]
-                                                    [(str key "-swing") (swing-value-generator (str key "-swing") 1000)]])]
-                               (assoc acc k g)))
-                           {}
-                           (range 1 (+ 1 num-keys)))]
+        [generators
+         modifiers] (reduce (fn [[gs ms] key]
+                              (let [[k g m] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  10000) []]
+                                                       [(str key "-grow")  (grow-only-generator   (str key "-grow")  10000) [:monotonic?]]
+                                                       [(str key "-swing") (swing-value-generator (str key "-swing") 10000) []]])]
+                                [(assoc gs k g)
+                                 (assoc ms k m)]))
+                            [{} {}]
+                            (range 1 (+ 1 num-keys)))]
     {:generator (gen/mix (vals generators))
      :final-generator (gen/phases
                        (gen/log "Let database quiesce, slow rate of reads only...")
                        (->>
                         (fn []
-                          (gen/once (pn-counter-reads (rand-nth (keys generators)) [])))
+                          (let [use-key (rand-nth (keys generators))]
+                            (gen/once (pn-counter-reads use-key (get modifiers use-key)))))
                         (gen/clients)
                         (gen/stagger (/ 1 (* num-keys num-nodes)))
                         (gen/time-limit 10))
@@ -598,7 +621,7 @@ all `:reads`
                        (gen/log "Final reads...")
                        (->>
                         (map (fn [key]
-                               (gen/once (pn-counter-reads key [:final?])))
+                               (gen/once (pn-counter-reads key (conj (get modifiers key) :final?))))
                              (keys generators))
                         (gen/each-thread)
                         (gen/clients)))}))
