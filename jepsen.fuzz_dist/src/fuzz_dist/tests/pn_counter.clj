@@ -9,11 +9,19 @@
   {:type :invoke, :f :read       :value [key nil]}                    ; eventually-consistent
   {:type :invoke, :f :read,      :value [key nil], :consistent? true} ; consistent
   {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
+  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent? or final?)
   ```
-  
-  TODO: Track read 'staleness', delta between `:read` `:value` and acceptable values?
-        Plot it?
-  "
+   
+  To create a `workload` with a suitable general purpose `generator`/`final-generator`,
+  a random mix of counter strategies, and a full `checker` for use in your `test`,
+  create a `Client` and:
+   
+  ```clj
+  (defn workload
+    [opts]
+    (merge {:client (PNCounterClient. nil)}
+           (pn-counter/test opts)))
+  ```"
   (:refer-clojure :exclude [test])
   (:require [fuzz-dist.checker.offset :as offset]
             [jepsen
@@ -125,9 +133,15 @@
   ^TreeRangeSet [^TreeRangeSet trs ops]
   (let [clone (TreeRangeSet/create trs)]
     (doseq [{:keys [f] :as op} ops]
-      (when (contains? #{:increment :decrement} f)
+      (when (contains? #{:increment :decrement} f) ; TODO should only be :increments now?
         (grow-tree clone (txn->delta op))))
     clone))
+
+(defn- clean-ops
+  "Removes augmented keys from given ops."
+  [ops]
+  (->> ops ; remove augmented processing keys for readability
+       (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read)))))
 
 (defn- history->counter-ranges
   "Augment all :read :ok and :increment :ok/:info ops with:
@@ -290,15 +304,17 @@
           (let [history' (conj history' op)]
             (recur history prev-reads history')))))))
 
-(defn history->check-final-reads
+(defn- history->check-final-reads
   "Checks given history for valid final reads:
-    - there are final? reads
-    - all reads agree on counter ranges
-    - all reads equal
+    - must be final? read from all nodes
+    - all reads must agree on counter ranges
+    - all reads must be equal
+  May return suspicious op's, e.g. increment value = read offset from counter.  
   {:valid? true/false
-   :final-reads [...]
-   :counter [...]}"
-  [history]
+   :final-reads [value, ...]
+   :counter [range, ...]
+   :suspicious [op, ...]}"
+  [history {:keys [nodes] :as _test}]
   (let [finals (->> history (filter #(and ((comp #{:read} :f) %)
                                           (:final? %)
                                           ((comp #{:ok} :type) %))))
@@ -307,20 +323,32 @@
         counter (->> counters first)
         values (->> finals (map :value))
         errors (cond-> nil
-                 (not (seq finals))
-                 (conj {:checker-error :no-final-reads})
+                 (not= (count finals) (count nodes))
+                 (conj {:checker-error :missing-final-reads})
 
                  (-> counters set count (> 1))
                  (conj {:checker-error :final-counters-not-equal})
 
                  (-> values set count (> 1))
-                 (conj {:checker-error :final-reads-not-equal}))]
+                 (conj {:checker-error :final-reads-not-equal}))
+        suspicious (->> finals
+                        (filter (fn [{:keys [counter-offsets node]}]
+                                  (not= 0 (get counter-offsets node))))
+                        (reduce (fn [acc {:keys [counter-offsets node]}]
+                                  (->> history
+                                       (filter #(and ((comp #{:increment} :f) %)
+                                                     (= (abs (get counter-offsets node)) (abs (:value %)))))
+                                       (concat acc)))
+                                nil)
+                        clean-ops
+                        vec)]
 
     (assoc (if (nil? errors)
              {:valid? true}
              {:valid? false :errors errors})
            :final-reads values
-           :counter (tree-range-set->vecs counter))))
+           :counter (tree-range-set->vecs counter)
+           :suspicious suspicious)))
 
 (defn checker
   "Can be optionally bounded:
@@ -331,40 +359,60 @@
   Returns:
   ```clojure
   {:valid?      true | false          ; any errors?
-   :errors      [trans, ...]          ; transactions with errors
-   :final-reads [value, ...]          ; all actual :final? :read :value's
-   :acceptable  [[lower upper]]       ; closed Range's of valid :final? :read :value's
-   :read-range  [[lower upper]]       ; closed Range's of all actual :read :value's
-   :bounds      Range                 ; bounds, may be (-∞..+∞), of counter
-   :possible    [[lower upper], ...]] ; all possible Range's of :value's for an eventually-consistent :read
+   :errors      [op, ...]             ; ops with errors
+   :final-reads [value, ...]          ; all actual final? read value's
+   :counter     [[lower upper]]       ; closed Range's of acceptable counter value's
+   :read-range  [[lower upper]]       ; closed Range's of all actual read value's
+   :bounds      [lower upper]         ; bounds, may be [nil nil] (-∞..+∞)
   }
   ```
   
-  Verifies every:
+  The `checker` goes through the history `op` by `op` keeping track of:
+  
+  - acceptable counter values
+  - each client's possible PoV
+  - what `op`'s definitely happened, maybe? happened 
+  - what has each client definitely seen, maybe? seen
+  - open `op`'s that may be seen during this `op`
+  - and so on...
+   
+  `:ok` `:increment`/`:decrement` (happened)
 
-  - `:ok` `:read` `:value`
-      - is in the set of *possible* ranges
-      - is within bounds
-      - is increasing if `:monotonic? true`, e.g. grow-only-counter
-  - `:ok` `:read` `:consistent?`/`:final?` `:value` 
-      - is in the set of *acceptable* ranges
-      - is within bounds
-      - `:final?` `:value`'s are equal for all `:read`'s
-  - `:ok` `:increment`/`:decrement` `:value`
-      - *acceptable* counter value(s) remain within bounds
- 
-  *Acceptable* `:read` `:consistent?`/`:final?` `:value`'s are the sum of:
+  - must be reflected in the counter, this client's PoV
+  - may be reflected in other client's PoV
+  
+  `:info` `:increment`/`:decrement` (maybe? happened)
 
-  - all `:ok` `:increment`/`:decrement`
-  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
-  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
+  - may be reflected in the counter, this client's PoV
+  - may be reflected in other client's PoV
+  
+open `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
 
-  *Possible* `:read` `:value`'s when eventually-consistent are the sum of:
+  - may be reflected in the counter (not relevant for this client as it's doing the `op`)
+  - may be reflected in other client's PoV
+  
+all `:reads`
 
-  - any number of `:ok` `:increment`/`:decrement`
-  - any number of possibly-completed (`:info`) `:increment`/`:decrement`
-  - any number of open `:increment`/`:decrement` transactions, e.g. `:invoke`'d but not yet `:ok`/`:info`/`:fail`
-"
+  - must be possible from this client's PoV
+  - must be in bounds
+
+`:consistent?`/`:final?` `:reads`'s
+  
+  - must be acceptable counter value
+  - `:final?` reads must be equal accross all clients
+
+`:monotonic?` `:reads`'s
+  
+  - must be `>=` previous read (absolute values)
+   
+`:ok` `:increment`/`:decrement` (happened)
+
+  - counter and this client's PoV must remain within bounds
+  - other clients are maybe?, eventually consistent, so no check   
+
+`:info` `:increment`/`:decrement` (maybe? happened)
+
+  - no checks needed"
   ([] (checker {}))
   ([{bounds :bounds :as opts}]
    (reify checker/Checker
@@ -407,7 +455,7 @@
                (cond
                  (nil? history)
                  (->> errors ; remove augmented processing keys for readability
-                      (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read))))
+                      clean-ops)
 
                  :else ; op by op...
                  (let [{:keys [type f value consistent? final? monotonic? counter-ranges checker-prev-read] :as op} (first history)
@@ -457,13 +505,13 @@
                      ; ignore
                      (recur history errors)))))
 
-             final-reads (history->check-final-reads history)
+             final-reads (history->check-final-reads history test)
              read-values (->> history
                               (filter  #(and ((comp #{:read} :f) %)
                                              ((comp #{:ok} :type) %)))
                               (history->value-ranges))
              plot     (offset/plot! test history (merge opts {:offset-key :counter-offsets
-                                                              :plot-title (str  "Counter Offsets for Key: " (:history-key opts))}))]
+                                                              :plot-title (str  "Counter read Offsets for Key: " (:history-key opts))}))]
 
          {:valid?      (and (empty? errors)
                             (:valid? final-reads)
@@ -507,12 +555,12 @@
   
   Returns a `generator/mix` of
    
-  - `:f (only :increment *or* :decrement) :value [key (0 <= random <= value)]`
+  - `:f (only :increment *or* :decrement) :value (Fibonacci sequence)]`
   - `:f :read :value [key nil]`
    
   Transactions are augmented `:monotonic? true` for `checker` to validate."
   [key value]
-  (gen/mix [(pn-counter-adds  [(rand-nth [:increment :decrement])] key [0 value])
+  (gen/mix [(pn-counter-adds [(rand-nth [:increment :decrement])] key [0 value])
             (pn-counter-reads key [:monotonic?])]))
 
 (defn swing-value-generator
@@ -540,26 +588,30 @@
           - is active the entire time of the test
   - `:final-generator` is shared/common
       - quiesce
-      - for every key, on every worker
+          - period of low rate of read's only
+      - then for every key, on every worker
           - `:read :final? true`
 
   Suggest `:rate` >= # keys * nodes * 4 for more effective coverage."
   [opts]
   (let [num-nodes (->> opts :nodes count)
         num-keys  num-nodes
-        generators (reduce (fn [acc key]
-                             (let [[k g] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  1000)]
-                                                    [(str key "-grow")  (grow-only-generator   (str key "-grow")  1000)]
-                                                    [(str key "-swing") (swing-value-generator (str key "-swing") 1000)]])]
-                               (assoc acc k g)))
-                           {}
-                           (range 1 (+ 1 num-keys)))]
+        [generators
+         modifiers] (reduce (fn [[gs ms] key]
+                              (let [[k g m] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  10000) []]
+                                                       [(str key "-grow")  (grow-only-generator   (str key "-grow")  10000) [:monotonic?]]
+                                                       [(str key "-swing") (swing-value-generator (str key "-swing") 10000) []]])]
+                                [(assoc gs k g)
+                                 (assoc ms k m)]))
+                            [{} {}]
+                            (range 1 (+ 1 num-keys)))]
     {:generator (gen/mix (vals generators))
      :final-generator (gen/phases
                        (gen/log "Let database quiesce, slow rate of reads only...")
                        (->>
                         (fn []
-                          (gen/once (pn-counter-reads (rand-nth (keys generators)) [])))
+                          (let [use-key (rand-nth (keys generators))]
+                            (gen/once (pn-counter-reads use-key (get modifiers use-key)))))
                         (gen/clients)
                         (gen/stagger (/ 1 (* num-keys num-nodes)))
                         (gen/time-limit 10))
@@ -569,27 +621,28 @@
                        (gen/log "Final reads...")
                        (->>
                         (map (fn [key]
-                               (gen/once (pn-counter-reads key [:final?])))
+                               (gen/once (pn-counter-reads key (conj (get modifiers key) :final?))))
                              (keys generators))
                         (gen/each-thread)
                         (gen/clients)))}))
 
 (defn test
-  "Constructs a partial test:
-  ```clojure
+  "Constructs a partial test for a `pn-counter`:
+  ```clj
   {:generator
    :final-generator
    :checker}
   ```
   given options from the CLI test constructor.
    
-  Generators and checker are `independent`, e.g. key aware, `:value [key value]`.
+  Generators and checker are `independent`, i.e. use key's,
+  so must be paired with a Client that can handle `:value [key value]` `op`'s.
    
-  So clients must `:invoke!` ops with `:value [key value]`."
+  See [[mix-generator]] and [[checker]]."
   [opts]
   (merge
+   (mix-generator opts)
    {:checker (fn pn-checker ; support passing opts in test map, e.g. perf map for nemeses
                ([] (pn-checker {}))
                ([opts']
-                (independent/checker (checker (merge opts opts')))))}
-   (mix-generator opts)))
+                (independent/checker (checker (merge opts opts')))))}))
