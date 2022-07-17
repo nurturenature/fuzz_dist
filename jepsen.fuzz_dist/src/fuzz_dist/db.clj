@@ -29,20 +29,31 @@
   "AntidoteDB."
   [_version]
   (reify db/DB
-    (setup! [this test node]
+    (setup! [this {:keys [db-dir erlang-eval fuzz-dist-dir] :as test} node]
       ;; cp antidote from control to node to install
       (scp/scp! {:port 22 :private-key-path "~/.ssh/id_rsa"}
-                [(:db-dir test)]
+                [db-dir]
                 (str "root" "@" node ":" "/root"))
 
       ;; cp fuzz_dist from control to node to install
       (scp/scp! {:port 22 :private-key-path "~/.ssh/id_rsa"}
-                [(:fuzz-dist-dir test)]
+                [fuzz-dist-dir]
                 (str "root" "@" node ":" "/root"))
 
       (db/start! this test node)
 
-      (Thread/sleep 10000))
+      (Thread/sleep 10000)
+      (when erlang-eval
+        (let [resp (c/su
+                    (c/cd
+                     node-antidote
+                     (c/exec
+                      (c/env {:NODE_NAME (n-to-fqdn node "antidote")
+                              :COOKIE "antidote"})
+                      "bin/antidote"
+                      :eval
+                      erlang-eval)))]
+          (info "erlang-eval: " erlang-eval " -> " resp))))
 
     (teardown! [this test node]
       (db/kill! this test node)
