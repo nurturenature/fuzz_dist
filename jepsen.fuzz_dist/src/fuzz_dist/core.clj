@@ -187,6 +187,10 @@
     :default false
     :parse-fn boolean]
 
+   [nil "--counter-strategy STRATEGIES" "E.g. grow,swing,rand"
+    :default #{:grow :swing :rand}
+    :parse-fn (fn [spec] (->> spec parse-comma-kws set))]
+
    [nil "--db-dir DIRECTORY" "Directory with database release"
     :default "/jepsen/antidote"]
 
