@@ -23,7 +23,8 @@
            (pn-counter/test opts)))
   ```"
   (:refer-clojure :exclude [test])
-  (:require [fuzz-dist.checker.offset :as offset]
+  (:require [clojure.set :as set]
+            [fuzz-dist.checker.offset :as offset]
             [jepsen
              [checker :as checker]
              [generator :as gen]
@@ -311,7 +312,7 @@
     - all reads must be equal
   May return suspicious op's, e.g. increment value = read offset from counter.  
   {:valid? true/false
-   :final-reads [value, ...]
+   :final-reads [[node, value], ...]
    :counter [range, ...]
    :suspicious [op, ...]}"
   [history {:keys [nodes] :as _test}]
@@ -324,7 +325,8 @@
         values (->> finals (map :value))
         errors (cond-> nil
                  (not= (count finals) (count nodes))
-                 (conj {:checker-error :missing-final-reads})
+                 (conj {:checker-error :missing-final-reads
+                        :checker-msg   (disj nodes (->> finals (map :node)))})
 
                  (-> counters set count (> 1))
                  (conj {:checker-error :final-counters-not-equal})
@@ -336,7 +338,8 @@
                                   (not= 0 (get counter-offsets node))))
                         (reduce (fn [acc {:keys [counter-offsets node]}]
                                   (->> history
-                                       (filter #(and ((comp #{:increment} :f) %)
+                                       (filter #(and ((comp #{:ok :info} :type) %)
+                                                     ((comp #{:increment} :f) %)
                                                      (= (abs (get counter-offsets node)) (abs (:value %)))))
                                        (concat acc)))
                                 nil)
@@ -346,7 +349,7 @@
     (assoc (if (nil? errors)
              {:valid? true}
              {:valid? false :errors errors})
-           :final-reads values
+           :final-reads (->> finals (map (fn [{:keys [node value]}] [node value])) sort)
            :counter (tree-range-set->vecs counter)
            :suspicious suspicious)))
 
@@ -474,7 +477,7 @@ all `:reads`
 
                                     (and (or consistent? final?)
                                          (not (.contains ctr-ranges value)))
-                                    (conj (assoc op :checker-error :value-not-acceptable))
+                                    (conj (assoc op :checker-error :value-invalid-counter))
 
                                     (and monotonic?
                                          (and checker-prev-read
@@ -539,43 +542,77 @@ all `:reads`
              :value (independent/tuple k nil)}
             flags)))
 
+(defn unique-random-numbers
+  "Generate a unique series of random numbers from 0 to n-1 
+  (from https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867)"
+  [n]
+  (let [a-set (set (take n (repeatedly #(rand-int n))))]
+    (concat a-set (set/difference (set (take n (range)))
+                                  a-set))))
+
 (defn rand-value-generator
   "Generate random `:increment`/`:decrement` with random values.
    
   Returns a `generator/mix` of:
    
   - `:f (random :increment/:decrement) :value [key (-value <= random <= value)]`
-  - `:f :read :value [key nil]`"
-  [key value]
-  (gen/mix [(pn-counter-adds [:increment :decrement]  key [(* -1 value) value])
-            (pn-counter-reads key [])]))
+  - `:f :read :value [key nil]`
+   
+  Values are unique to encourge a more unique/sparse possible counter value state space
+  for the checker to make slightly more meaningful assertions."
+  ([k] (rand-value-generator k 10000))
+  ([k v]
+   (gen/mix [(->> (unique-random-numbers (->> v (* 2) (+ 1)))
+                  (map #(- % v))
+                  (map (fn [v] {:type :invoke,
+                                :f (rand-nth [:increment :decrement]),
+                                :value (independent/tuple k v)})))
+             (pn-counter-reads k [])])))
 
 (defn grow-only-generator
   "Generator for a grow-only counter.
   
   Returns a `generator/mix` of
    
-  - `:f (only :increment *or* :decrement) :value (Fibonacci sequence)]`
-  - `:f :read :value [key nil]`
+  - `:f (only :increment *or* :decrement) :value (range v+1 v*2)]`
+  - `:f :read :value [key nil] :monotonic? true`
    
-  Transactions are augmented `:monotonic? true` for `checker` to validate."
-  [key value]
-  (gen/mix [(pn-counter-adds [(rand-nth [:increment :decrement])] key [0 value])
-            (pn-counter-reads key [:monotonic?])]))
+  Using an increasing value starting at `>= total # ops + 1`
+  creates a more unique/sparse possible counter value state space for the checker
+  to make slightly more meaningful assertions."
+  ([k] (grow-only-generator k 10000))
+  ([k v]
+   (let [f (rand-nth [:increment :decrement])]
+     (gen/mix [(->> (range (+ v 1) (* v 2))
+                    (map (fn [v] {:type :invoke,
+                                  :f f,
+                                  :value (independent/tuple k v)})))
+               (pn-counter-reads k [:monotonic?])]))))
 
 (defn swing-value-generator
-  "Generator that swings between trying to increase the counter with `:increment`'s,
-  then decrease with `:decrement`s, then increase ...
+  "Generator that swings between trying to increase the counter with increments,
+  then decreasing with decrements, then increasing ...
 
   Returns a `generator/mix` of
    
   - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= random <= value)]`
-  - `:f :read :value [key nil]`"
-  [key value]
-  (gen/cycle-times 10 (gen/mix [(pn-counter-adds [:increment]  key [0 value])
-                                (pn-counter-reads key [])])
-                   10 (gen/mix [(pn-counter-adds [:decrement]  key [0 value])
-                                (pn-counter-reads key [])])))
+  - `:f :read :value [key nil]`
+   
+  Using unique random increment/decrement values to
+  create a more unique/sparse possible counter value state space for the checker
+  to make slightly more meaningful assertions."
+  ([k] (swing-value-generator k 10000))
+  ([k v]
+   (gen/mix [(gen/cycle-times 10 (->> (unique-random-numbers (+ v 1))
+                                      (map (fn [v] {:type :invoke,
+                                                    :f :increment,
+                                                    :value (independent/tuple k v)})))
+                              10 (->> (unique-random-numbers (+ v 1))
+                                      (map (fn [v] {:type :invoke,
+                                                    :f :decrement,
+                                                    :value (independent/tuple k v)}))))
+
+             (pn-counter-reads k [])])))
 
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
@@ -593,14 +630,17 @@ all `:reads`
           - `:read :final? true`
 
   Suggest `:rate` >= # keys * nodes * 4 for more effective coverage."
-  [opts]
-  (let [num-nodes (->> opts :nodes count)
+  [{:keys [counter-strategy nodes] :or {counter-strategy #{:grow :swing :rand}} :as _opts}]
+  (let [num-nodes (count nodes)
         num-keys  num-nodes
+        counter-strategy (->> counter-strategy seq shuffle)
         [generators
          modifiers] (reduce (fn [[gs ms] key]
-                              (let [[k g m] (rand-nth [[(str key "-rand")  (rand-value-generator  (str key "-rand")  10000) []]
-                                                       [(str key "-grow")  (grow-only-generator   (str key "-grow")  10000) [:monotonic?]]
-                                                       [(str key "-swing") (swing-value-generator (str key "-swing") 10000) []]])]
+                              (let [[k g m] (->> counter-strategy
+                                                 rand-nth
+                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  [:monotonic?]]
+                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) []]
+                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  []]}))]
                                 [(assoc gs k g)
                                  (assoc ms k m)]))
                             [{} {}]
