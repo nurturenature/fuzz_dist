@@ -187,6 +187,10 @@
     :default false
     :parse-fn boolean]
 
+   [nil "--counter-strategy STRATEGIES" "E.g. grow,swing,rand"
+    :default #{:grow :swing :rand}
+    :parse-fn (fn [spec] (->> spec parse-comma-kws set))]
+
    [nil "--db-dir DIRECTORY" "Directory with database release"
     :default "/jepsen/antidote"]
 
@@ -194,6 +198,10 @@
     :default (vec db-targets)
     :parse-fn parse-comma-kws
     :validate [(partial every? db-targets) (cli/one-of db-targets)]]
+
+   ;; "recon_trace:calls({cure, update_objects, fun(_) -> return_trace() end}, 10000)."
+   [nil "--erlang-eval EXPRESSION" "Expression to be evaluated on each node after starting db."
+    :default nil]
 
    [nil "--fuzz-dist-dir DIRECTORY" "Directory with fuzz_dist release"
     :default "/jepsen/fuzz_dist"]
