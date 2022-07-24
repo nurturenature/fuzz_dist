@@ -3,11 +3,11 @@
 ## Configuration
 
 - git AntidoteDB/antidote master
-  - default config
+  - default config (plus `sync_log true` when nemesis is process kill)
   - Erlang 24
 - topologies
-  - 1 * dc1n5
-  - 5 * dc1n1
+  - intra dc -> 1 * dc1n5 (single data center with 5 nodes)
+  - inter dc -> 5 * dc1n1 (5 data centers with a single node)
 - Erlang client
   - `:antidote_crdt_set_aw`, `:antidote_crdt_counter_pn` datatypes
   - `static: :true` transactions
@@ -25,7 +25,7 @@
   </tr>
   <tr>
     <th rowspan=2>workload</th>
-    <td>~ 10 read/write (random mix) / sec</td>
+    <td>~ 10 reads and 10 writes (random sequence) / sec / key</td>
     <td>60s<td>
   </tr>
   <tr>
@@ -39,15 +39,32 @@
   </tr>
   <tr>
     <th>quiesce</th>
-    <td>none</td>
+    <td>low rate of reads<br />
+        no writes</td>
     <td>10s<td>
   </tr>
   <tr>
     <th>final reads</th>
-    <td>1 read / node</td>
+    <td>1 read / node / key</td>
     <td>immediate<td>
   </tr>
 </table>
+
+----
+
+## g-set
+
+Generator adds a sequential integer to a single set.
+
+## pn-counter
+
+Generators try different counter strategies:
+- random values
+- grow-only
+- swinging between p's and n's
+
+Uses largish unique random values to help in checking the results.
+E.g. when calculating all of the possible eventually states to evaluate a read, larger values produce a sparser set of possible ranges than +/-1.
 
 ----
 
@@ -55,11 +72,11 @@
 
 ### Types
 
+- none
 - partition
 - kill
 - pause
-
-[:one, :all, :majority, :minority, :minority_third, :majorities_ring :primaries]
+- targets: [:one, :all, :majority, :minority, :minority_third, :majorities_ring :primaries]
 
 Clock and time faults are not being tested.
 (Need real VMs.)
@@ -77,7 +94,7 @@ Would like to test at just less than `:nodedown`:
 
 ## Verification
 
-Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#var-set-full) and [pn-counter](https://github.com/jepsen-io/maelstrom/blob/main/doc/04-crdts/02-counters.md) model/checkers for verification.
+Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#var-set-full) and an enhanced (fuzz_dist) [pn-counter](https://nurturenature.github.io/jepsen.fuzz_dist/fuzz-dist.tests.pn-counter.html) model/checker for verification.
 
 ----
 
@@ -102,7 +119,7 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
   </tr>
  <tr>
     <th>Inter DC</th>
-    <td>none</td>
+    <td>yes</td>
     <td>yes</td>
     <td>yes</td>
     <td>yes</td>
@@ -111,38 +128,95 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 
 ----
 
+Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1.
+
 ## Observations
 
-With no faults, no anomalies have been observed. No composition, ordering, timing, or distribution of transactions has had an impact. Some sequencing can occationally cause a client write to timeout with no impact on validity.
-
-Intra, e.g. 1 * dcn5, networking is **significantly** more resilient than inter, e.g. 5 * dcn1. No pattern of faults have been able to introduce an observed anomaly with intra dc nodes except for process kills, even with `sync_log` `true`.
-
-Inter-dc faults
-  - can be invalid results, but:
-    - all transactions return `:ok`
-    - no client errors, timeouts, etc
-  - other times cluster appears to loose complete cohesion, no further writes are replicated
-
-### Non-Safety
-
-Client writes occasionally return `:aborted` when not expected, e.g. no faults, but doesn't affect valid outcome.
-  
-Increased client write timeouts during partioning:
-- lots of client timeouts, but valid results
-- can crash stable_meta_data_server
-
-And with process kills
-  - clients can occasionally `:error` when healed, but results remains valid
+See initial GitHub issues:
+- [pn-counter can lose :ok'd increments in a no fault environment](https://github.com/AntidoteDB/antidote/issues/492)
+- [pn-counters are susceptible to partitioning](https://github.com/AntidoteDB/antidote/issues/493)
+- [Inter DC partitioning can disrupt replication](https://github.com/AntidoteDB/antidote/issues/489)
 
 ----
 
-## Work In Progress
+### No Faults
 
-- add `:interactive` transactions
-- add application aborted transactions
-- better client error handling
-  - discern between known/unknown failures
-  - more descriptive logging
+#### Intra DC
+- no anomalies observed
+- g-set: ~ 10+% write operations abort
+- pn-counter: ~ 2-3/1000 write operations abort
+
+#### Inter DC
+
+g-set:
+- all op's return `:ok`
+- but not all writes replicated
+
+pn-counter:
+- all op's return `:ok`
+- but pn-counter can produce:
+  - impossible read values
+  - invalid final read values
+- most common failure is value read from node appears to have lost a previous :ok'd write for the same node
+- less frequently the lost write appears to have come from a previously replicated op on another node
+
+----
+
+### Partitions
+
+#### Intra DC
+- no anomalies observed
+- increased client write timeouts post partition, in healed state
+- can crash `stable_meta_data_server`
+
+#### Inter DC
+
+g-set:
+- all op's return `:ok`
+- but most tests fail most of the time
+  - not all writes are replicated
+
+
+pc-counter:
+- all op's return `:ok`
+- but most tests fail most of the time
+  - invalid final read values
+  - impossible read values
+  - non-monotonic reads for grow-only 
+
+----
+
+### Process Pause
+
+#### Intra DC
+
+- no anomalies observed
+- increase in timeouts post pause, in healed state
+
+#### Inter DC
+
+g-set:
+- not all `:ok` writes replicated
+
+pn-counter:
+- not all `:ok` writes replicated
+
+----
+
+### Process Kill
+
+`sync_log true`
+
+Clients will occasionally return `:error` for long periods, at times the remainder of the test, even after being healed.
+
+g-set:
+  - partial replication of writes
+  - increase in timeouts post kill, in healed state
+
+pn-counter:
+  - impossible read values
+  - invalid final reads
+  - non-monotonic reads for grow-only
 
 ----
 
@@ -151,3 +225,5 @@ And with process kills
 Current docker compose is problematic, so a [workaround](https://github.com/nurturenature/jepsen-docker-workaround) has been developed.
 
 Jepsen's LXC [environment](https://github.com/jepsen-io/jepsen#lxc) is the best.
+
+Also see previously mentioned Antidote GitHub issues for steps to reproduce.
