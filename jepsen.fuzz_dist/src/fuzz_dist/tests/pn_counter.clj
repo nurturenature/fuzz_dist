@@ -326,7 +326,7 @@
         errors (cond-> nil
                  (not= (count finals) (count nodes))
                  (conj {:checker-error :missing-final-reads
-                        :checker-msg   (disj nodes (->> finals (map :node)))})
+                        :checker-msg   (disj nodes (->> finals (map :node) set))})
 
                  (-> counters set count (> 1))
                  (conj {:checker-error :final-counters-not-equal})

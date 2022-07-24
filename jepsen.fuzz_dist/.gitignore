@@ -8,9 +8,7 @@ pom.xml.asc
 *.jar
 *.class
 /.calva
-/.clj-kondo
 /.lein-*
-/.lsp
 /.nrepl-port
 .hgignore
 .hg/
