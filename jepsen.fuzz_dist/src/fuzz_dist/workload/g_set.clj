@@ -63,7 +63,10 @@
                       (gen/once)
                       (gen/each-thread)
                       (gen/clients)))
-   :checker (checker/compose
-             {:final-reads (final-reads/checker)
-              :set-full    (checker/set-full
-                            {:linearizable? (:linearizable? opts)})})})
+   :checker (fn g-set-checker ; support passing opts in test map, e.g. perf map for nemeses
+              ([] (g-set-checker {}))
+              ([opts']
+               (let [opts' (merge opts opts')]
+                 (checker/compose
+                  {:final-reads (final-reads/checker)
+                   :set-full    (checker/set-full opts')}))))})
