@@ -9,7 +9,7 @@
   {:type :invoke, :f :read       :value [key nil]}                    ; eventually-consistent
   {:type :invoke, :f :read,      :value [key nil], :consistent? true} ; consistent
   {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
-  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent? or final?)
+  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent?, or final?)
   ```
    
   To create a `workload` with a suitable general purpose `generator`/`final-generator`,
@@ -383,39 +383,32 @@
 
   - must be reflected in the counter, this client's PoV
   - may be reflected in other client's PoV
+  - must be in bounds
+  
   
   `:info` `:increment`/`:decrement` (maybe? happened)
 
   - may be reflected in the counter, this client's PoV
   - may be reflected in other client's PoV
   
-open `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
+  `:invoke`'d `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
 
   - may be reflected in the counter (not relevant for this client as it's doing the `op`)
   - may be reflected in other client's PoV
   
-all `:reads`
+  all `:reads`
 
   - must be possible from this client's PoV
   - must be in bounds
 
-`:consistent?`/`:final?` `:reads`'s
+  `:consistent?`/`:final?` `:reads`'s
   
   - must be acceptable counter value
-  - `:final?` reads must be equal accross all clients
+  - `:final?` reads must be present and equal accross all nodes
 
-`:monotonic?` `:reads`'s
+  `:monotonic?` `:reads`'s
   
-  - must be `>=` previous read (absolute values)
-   
-`:ok` `:increment`/`:decrement` (happened)
-
-  - counter and this client's PoV must remain within bounds
-  - other clients are maybe?, eventually consistent, so no check   
-
-`:info` `:increment`/`:decrement` (maybe? happened)
-
-  - no checks needed"
+  - must be `>=` previous read (absolute values)"
   ([] (checker {}))
   ([{bounds :bounds :as opts}]
    (reify checker/Checker
@@ -525,41 +518,25 @@ all `:reads`
           :bounds      (range->vec bounds)
           :plot        plot})))))
 
-(defn- pn-counter-adds
-  "Random mix of `ops`, e.g. `[:increment, :decrement]` with `:value [key, lower <= random <= upper]`."
-  [ops key [lower upper]]
-  (fn [] {:type :invoke,
-          :f (rand-nth ops),
-          :value (independent/tuple key (+ lower (rand-int (+ 1 (- upper lower)))))}))
-
-(defn- pn-counter-reads
-  "Sequence of `:read`'s, optionally marked `:flag? true`."
-  [k flags]
-  (fn []
-    (reduce (fn [txn flag] (assoc txn flag true))
-            {:type :invoke,
-             :f :read,
-             :value (independent/tuple k nil)}
-            flags)))
-
 (defn unique-random-numbers
   "Generate a unique series of random numbers from 0 to n-1 
-  (from https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867)"
+  (from [clojuredocs.org](https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867))."
   [n]
   (let [a-set (set (take n (repeatedly #(rand-int n))))]
     (concat a-set (set/difference (set (take n (range)))
                                   a-set))))
 
 (defn rand-value-generator
-  "Generate random `:increment`/`:decrement` with random values.
+  "Generate random `:increment`/`:decrement` with unique random value's.
    
-  Returns a `generator/mix` of:
+  Returns a [[jepsen.generator/mix]] of:
    
-  - `:f (random :increment/:decrement) :value [key (-value <= random <= value)]`
+  - `:f (random :increment/:decrement) :value [key (-value <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
-  Values are unique to encourge a more unique/sparse possible counter value state space
-  for the checker to make slightly more meaningful assertions."
+  Using unique random values with a range larger than the number of op's
+  can create a more unique/sparse possible counter value state space for the checker
+  to make slightly more meaningful assertions."
   ([k] (rand-value-generator k 10000))
   ([k v]
    (gen/mix [(->> (unique-random-numbers (->> v (* 2) (+ 1)))
@@ -567,35 +544,41 @@ all `:reads`
                   (map (fn [v] {:type :invoke,
                                 :f (rand-nth [:increment :decrement]),
                                 :value (independent/tuple k v)})))
-             (pn-counter-reads k [])])))
+             (repeat {:type :invoke,
+                      :f :read,
+                      :value (independent/tuple k nil)})])))
 
 (defn grow-only-generator
   "Generator for a grow-only counter.
   
   Returns a `generator/mix` of
    
-  - `:f (only :increment *or* :decrement) :value (range v+1 v*2)]`
+  - `:f (only :increment *or* :decrement) :value (v + 1 <= unique random <= v * 2)]`
   - `:f :read :value [key nil] :monotonic? true`
    
-  Using an increasing value starting at `>= total # ops + 1`
+  Using a unique random value starting at `>= total # ops + 1`
   creates a more unique/sparse possible counter value state space for the checker
   to make slightly more meaningful assertions."
   ([k] (grow-only-generator k 10000))
   ([k v]
    (let [f (rand-nth [:increment :decrement])]
-     (gen/mix [(->> (range (+ v 1) (* v 2))
+     (gen/mix [(->> (unique-random-numbers v)
+                    (map #(+ % v 1))
                     (map (fn [v] {:type :invoke,
                                   :f f,
                                   :value (independent/tuple k v)})))
-               (pn-counter-reads k [:monotonic?])]))))
+               (repeat {:type :invoke,
+                        :f :read,
+                        :value (independent/tuple k nil)
+                        :monotonic? true})]))))
 
 (defn swing-value-generator
   "Generator that swings between trying to increase the counter with increments,
   then decreasing with decrements, then increasing ...
 
-  Returns a `generator/mix` of
+  Returns a `jepsen.generator/mix` of
    
-  - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= random <= value)]`
+  - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
   Using unique random increment/decrement values to
@@ -611,13 +594,14 @@ all `:reads`
                                       (map (fn [v] {:type :invoke,
                                                     :f :decrement,
                                                     :value (independent/tuple k v)}))))
-
-             (pn-counter-reads k [])])))
+             (repeat {:type :invoke,
+                      :f :read,
+                      :value (independent/tuple k nil)})])))
 
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
   
-  - `:generator` is a `generator/mix` of individual generators
+  - `:generator` is a `jepsen.generator/mix` of individual generators
       - 1 generator / key, with  # keys = nodes
       - each individual key generator:
           - uses a different strategy to generate operations
@@ -626,10 +610,11 @@ all `:reads`
   - `:final-generator` is shared/common
       - quiesce
           - period of low rate of read's only
-      - then for every key, on every worker
+      - then for every key, on every node
           - `:read :final? true`
 
-  Suggest `:rate` >= # keys * nodes * 4 for more effective coverage."
+  Suggest `:rate` >= # keys * nodes * 4 for more effective coverage,
+  e.g. `--rate 100`."
   [{:keys [counter-strategy nodes] :or {counter-strategy #{:grow :swing :rand}} :as _opts}]
   (let [num-nodes (count nodes)
         num-keys  num-nodes
@@ -638,9 +623,9 @@ all `:reads`
          modifiers] (reduce (fn [[gs ms] key]
                               (let [[k g m] (->> counter-strategy
                                                  rand-nth
-                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  [:monotonic?]]
-                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) []]
-                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  []]}))]
+                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  {:monotonic? true}]
+                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) {}]
+                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  {}]}))]
                                 [(assoc gs k g)
                                  (assoc ms k m)]))
                             [{} {}]
@@ -650,8 +635,11 @@ all `:reads`
                        (gen/log "Let database quiesce, slow rate of reads only...")
                        (->>
                         (fn []
-                          (let [use-key (rand-nth (keys generators))]
-                            (gen/once (pn-counter-reads use-key (get modifiers use-key)))))
+                          (let [k (rand-nth (keys generators))]
+                            (gen/once (merge {:type :invoke,
+                                              :f :read,
+                                              :value (independent/tuple k nil)}
+                                             (get modifiers k)))))
                         (gen/clients)
                         (gen/stagger (/ 1 (* num-keys num-nodes)))
                         (gen/time-limit 10))
@@ -660,8 +648,12 @@ all `:reads`
 
                        (gen/log "Final reads...")
                        (->>
-                        (map (fn [key]
-                               (gen/once (pn-counter-reads key (conj (get modifiers key) :final?))))
+                        (map (fn [k]
+                               (gen/once (merge {:type :invoke,
+                                                 :f :read,
+                                                 :value (independent/tuple k nil)
+                                                 :final? true}
+                                                (get modifiers k))))
                              (keys generators))
                         (gen/each-thread)
                         (gen/clients)))}))

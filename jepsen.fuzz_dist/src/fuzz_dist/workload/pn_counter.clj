@@ -1,7 +1,5 @@
 (ns fuzz-dist.workload.pn-counter
-  "An eventually-consistent counter which supports increments and decrements.
-  Validates that the final read on each node has a value which is the sum of
-  all known (or possible) increments and decrements."
+  "An eventually-consistent, optionaly bounded, counter which supports increments and decrements."
   (:require [clojure.tools.logging :refer [info]]
             [fuzz-dist.client :as fd-client]
             [fuzz-dist.tests.pn-counter :as pn-counter]
@@ -47,7 +45,7 @@
 
 (defn workload
   "Constructs a workload:
-  ```clojure
+  ```clj
   {:client, :generator, :final-generator, :checker}
   ```
   for a pn-counter, given options from the CLI test constructor."

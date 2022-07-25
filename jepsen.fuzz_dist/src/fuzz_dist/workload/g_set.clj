@@ -45,7 +45,10 @@
     (fd-client/ws-close conn)))
 
 (defn workload
-  "Constructs a workload, {:client, :generator, :final-generator, :checker},
+  "Constructs a workload:
+   ```clj
+   {:client, :generator, :final-generator, :checker}
+   ```
    for a g-set, given options from the CLI test constructor."
   [opts]
   {:client    (GSetClient. nil)
