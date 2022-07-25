@@ -525,23 +525,6 @@ all `:reads`
           :bounds      (range->vec bounds)
           :plot        plot})))))
 
-(defn- pn-counter-adds
-  "Random mix of `ops`, e.g. `[:increment, :decrement]` with `:value [key, lower <= random <= upper]`."
-  [ops key [lower upper]]
-  (fn [] {:type :invoke,
-          :f (rand-nth ops),
-          :value (independent/tuple key (+ lower (rand-int (+ 1 (- upper lower)))))}))
-
-(defn- pn-counter-reads
-  "Sequence of `:read`'s, optionally marked `:flag? true`."
-  [k flags]
-  (fn []
-    (reduce (fn [txn flag] (assoc txn flag true))
-            {:type :invoke,
-             :f :read,
-             :value (independent/tuple k nil)}
-            flags)))
-
 (defn unique-random-numbers
   "Generate a unique series of random numbers from 0 to n-1 
   (from https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867)"
@@ -567,7 +550,9 @@ all `:reads`
                   (map (fn [v] {:type :invoke,
                                 :f (rand-nth [:increment :decrement]),
                                 :value (independent/tuple k v)})))
-             (pn-counter-reads k [])])))
+             (repeat {:type :invoke,
+                      :f :read,
+                      :value (independent/tuple k nil)})])))
 
 (defn grow-only-generator
   "Generator for a grow-only counter.
@@ -587,7 +572,10 @@ all `:reads`
                     (map (fn [v] {:type :invoke,
                                   :f f,
                                   :value (independent/tuple k v)})))
-               (pn-counter-reads k [:monotonic?])]))))
+               (repeat {:type :invoke,
+                        :f :read,
+                        :value (independent/tuple k nil)
+                        :monotonic? true})]))))
 
 (defn swing-value-generator
   "Generator that swings between trying to increase the counter with increments,
@@ -611,8 +599,9 @@ all `:reads`
                                       (map (fn [v] {:type :invoke,
                                                     :f :decrement,
                                                     :value (independent/tuple k v)}))))
-
-             (pn-counter-reads k [])])))
+             (repeat {:type :invoke,
+                      :f :read,
+                      :value (independent/tuple k nil)})])))
 
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
@@ -638,9 +627,9 @@ all `:reads`
          modifiers] (reduce (fn [[gs ms] key]
                               (let [[k g m] (->> counter-strategy
                                                  rand-nth
-                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  [:monotonic?]]
-                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) []]
-                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  []]}))]
+                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  {:monotonic? true}]
+                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) {}]
+                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  {}]}))]
                                 [(assoc gs k g)
                                  (assoc ms k m)]))
                             [{} {}]
@@ -650,8 +639,11 @@ all `:reads`
                        (gen/log "Let database quiesce, slow rate of reads only...")
                        (->>
                         (fn []
-                          (let [use-key (rand-nth (keys generators))]
-                            (gen/once (pn-counter-reads use-key (get modifiers use-key)))))
+                          (let [k (rand-nth (keys generators))]
+                            (gen/once (merge {:type :invoke,
+                                              :f :read,
+                                              :value (independent/tuple k nil)}
+                                             (get modifiers k)))))
                         (gen/clients)
                         (gen/stagger (/ 1 (* num-keys num-nodes)))
                         (gen/time-limit 10))
@@ -660,8 +652,12 @@ all `:reads`
 
                        (gen/log "Final reads...")
                        (->>
-                        (map (fn [key]
-                               (gen/once (pn-counter-reads key (conj (get modifiers key) :final?))))
+                        (map (fn [k]
+                               (gen/once (merge {:type :invoke,
+                                                 :f :read,
+                                                 :value (independent/tuple k nil)
+                                                 :final? true}
+                                                (get modifiers k))))
                              (keys generators))
                         (gen/each-thread)
                         (gen/clients)))}))
