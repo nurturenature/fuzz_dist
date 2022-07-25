@@ -559,16 +559,17 @@ all `:reads`
   
   Returns a `generator/mix` of
    
-  - `:f (only :increment *or* :decrement) :value (range v+1 v*2)]`
+  - `:f (only :increment *or* :decrement) :value (v + 1 <= unique random <= v * 2)]`
   - `:f :read :value [key nil] :monotonic? true`
    
-  Using an increasing value starting at `>= total # ops + 1`
+  Using a unique random value starting at `>= total # ops + 1`
   creates a more unique/sparse possible counter value state space for the checker
   to make slightly more meaningful assertions."
   ([k] (grow-only-generator k 10000))
   ([k v]
    (let [f (rand-nth [:increment :decrement])]
-     (gen/mix [(->> (range (+ v 1) (* v 2))
+     (gen/mix [(->> (unique-random-numbers v)
+                    (map #(+ % v 1))
                     (map (fn [v] {:type :invoke,
                                   :f f,
                                   :value (independent/tuple k v)})))
