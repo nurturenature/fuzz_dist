@@ -9,7 +9,7 @@
   {:type :invoke, :f :read       :value [key nil]}                    ; eventually-consistent
   {:type :invoke, :f :read,      :value [key nil], :consistent? true} ; consistent
   {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
-  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent? or final?)
+  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent?, or final?)
   ```
    
   To create a `workload` with a suitable general purpose `generator`/`final-generator`,
@@ -383,39 +383,32 @@
 
   - must be reflected in the counter, this client's PoV
   - may be reflected in other client's PoV
+  - must be in bounds
+  
   
   `:info` `:increment`/`:decrement` (maybe? happened)
 
   - may be reflected in the counter, this client's PoV
   - may be reflected in other client's PoV
   
-open `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
+  `:invoke`'d `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
 
   - may be reflected in the counter (not relevant for this client as it's doing the `op`)
   - may be reflected in other client's PoV
   
-all `:reads`
+  all `:reads`
 
   - must be possible from this client's PoV
   - must be in bounds
 
-`:consistent?`/`:final?` `:reads`'s
+  `:consistent?`/`:final?` `:reads`'s
   
   - must be acceptable counter value
-  - `:final?` reads must be equal accross all clients
+  - `:final?` reads must be present and equal accross all nodes
 
-`:monotonic?` `:reads`'s
+  `:monotonic?` `:reads`'s
   
-  - must be `>=` previous read (absolute values)
-   
-`:ok` `:increment`/`:decrement` (happened)
-
-  - counter and this client's PoV must remain within bounds
-  - other clients are maybe?, eventually consistent, so no check   
-
-`:info` `:increment`/`:decrement` (maybe? happened)
-
-  - no checks needed"
+  - must be `>=` previous read (absolute values)"
   ([] (checker {}))
   ([{bounds :bounds :as opts}]
    (reify checker/Checker
@@ -527,22 +520,23 @@ all `:reads`
 
 (defn unique-random-numbers
   "Generate a unique series of random numbers from 0 to n-1 
-  (from https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867)"
+  (from [clojuredocs.org](https://clojuredocs.org/clojure.core/rand-int#example-5432caafe4b0edc37b198867))."
   [n]
   (let [a-set (set (take n (repeatedly #(rand-int n))))]
     (concat a-set (set/difference (set (take n (range)))
                                   a-set))))
 
 (defn rand-value-generator
-  "Generate random `:increment`/`:decrement` with random values.
+  "Generate random `:increment`/`:decrement` with unique random value's.
    
-  Returns a `generator/mix` of:
+  Returns a [[jepsen.generator/mix]] of:
    
-  - `:f (random :increment/:decrement) :value [key (-value <= random <= value)]`
+  - `:f (random :increment/:decrement) :value [key (-value <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
-  Values are unique to encourge a more unique/sparse possible counter value state space
-  for the checker to make slightly more meaningful assertions."
+  Using unique random values with a range larger than the number of op's
+  can create a more unique/sparse possible counter value state space for the checker
+  to make slightly more meaningful assertions."
   ([k] (rand-value-generator k 10000))
   ([k v]
    (gen/mix [(->> (unique-random-numbers (->> v (* 2) (+ 1)))
@@ -582,9 +576,9 @@ all `:reads`
   "Generator that swings between trying to increase the counter with increments,
   then decreasing with decrements, then increasing ...
 
-  Returns a `generator/mix` of
+  Returns a `jepsen.generator/mix` of
    
-  - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= random <= value)]`
+  - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
   Using unique random increment/decrement values to
@@ -607,7 +601,7 @@ all `:reads`
 (defn mix-generator
   "Returns `{:generator, :final-generator}` where:
   
-  - `:generator` is a `generator/mix` of individual generators
+  - `:generator` is a `jepsen.generator/mix` of individual generators
       - 1 generator / key, with  # keys = nodes
       - each individual key generator:
           - uses a different strategy to generate operations
@@ -616,10 +610,11 @@ all `:reads`
   - `:final-generator` is shared/common
       - quiesce
           - period of low rate of read's only
-      - then for every key, on every worker
+      - then for every key, on every node
           - `:read :final? true`
 
-  Suggest `:rate` >= # keys * nodes * 4 for more effective coverage."
+  Suggest `:rate` >= # keys * nodes * 4 for more effective coverage,
+  e.g. `--rate 100`."
   [{:keys [counter-strategy nodes] :or {counter-strategy #{:grow :swing :rand}} :as _opts}]
   (let [num-nodes (count nodes)
         num-keys  num-nodes
