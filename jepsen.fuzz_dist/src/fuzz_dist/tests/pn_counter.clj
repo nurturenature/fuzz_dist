@@ -93,12 +93,6 @@
   (->> (map range->vec (.asRanges s))
        vec))
 
-(defn- history->value-ranges
-  "Takes a history and returns a vector of inclusive :value ranges."
-  [history]
-  (let [^TreeRangeSet values-set (TreeRangeSet/create (map #(vec->range [(:value %) (:value %)]) history))]
-    (tree-range-set->vecs values-set)))
-
 (defn- txn->delta
   "Given a transaction, returns `:value`/-`:value` for `:increment`/`:decrement`."
   [txn]
@@ -344,13 +338,21 @@
                                 nil)
                         clean-ops
                         vec)]
+    ; pretty result, e.g. ordered, minimal
+    (cond-> {}
+      (not (seq errors))
+      (assoc :valid? true)
 
-    (assoc (if (nil? errors)
-             {:valid? true}
-             {:valid? false :errors errors})
-           :final-reads (->> finals (map (fn [{:keys [node value]}] [node value])) sort)
-           :counter (tree-range-set->vecs counter)
-           :suspicious suspicious)))
+      (seq errors)
+      (assoc :valid? false
+             :errors errors)
+
+      true
+      (assoc :final-reads (->> finals (map (fn [{:keys [node value]}] [node value])) sort)
+             :counter (tree-range-set->vecs counter))
+
+      (seq suspicious)
+      (assoc :suspicious suspicious))))
 
 (defn checker
   "Can be optionally bounded:
@@ -359,14 +361,15 @@
   ```
 
   Returns:
-  ```clojure
-  {:valid?      true | false          ; any errors?
-   :errors      [op, ...]             ; ops with errors
-   :final-reads [value, ...]          ; all actual final? read value's
-   :counter     [[lower upper]]       ; closed Range's of acceptable counter value's
-   :read-range  [[lower upper]]       ; closed Range's of all actual read value's
-   :bounds      [lower upper]         ; bounds, may be [nil nil] (-∞..+∞)
-  }
+  ```clj
+  {:valid?         true | false     ; any errors?
+   :errors         [op, ...]        ; op's with errors
+   :final-reads
+     {:valid?      true | false     ; final reads valid?
+      :final-reads [value, ...]     ; final read value's
+      :counter     [[lower upper]]  ; closed Range(s) of acceptable counter value(s)
+      :suspicious  [op, ...]}       ; possible suspicious op's, e.g. its value is missing from read value
+   :bounds         [lower upper]}   ; bounds, may be [nil nil] (-∞..+∞)
   ```
   
   The `checker` goes through the history `op` by `op` keeping track of:
@@ -501,21 +504,25 @@
                      (recur history errors)))))
 
              final-reads (history->check-final-reads history test)
-             read-values (->> history
-                              (filter  #(and ((comp #{:read} :f) %)
-                                             ((comp #{:ok} :type) %)))
-                              (history->value-ranges))
              plot     (offset/plot! test history (merge opts {:offset-key :counter-offsets
                                                               :plot-title (str  "Counter read Offsets for Key: " (:history-key opts))}))]
+         ; result should be good looking, e.g. ordered, minimal
+         (cond-> {}
+           true
+           (assoc :valid? (and (empty? errors)
+                               (:valid? final-reads)
+                               (:valid? plot)))
+           (seq errors)
+           (assoc :errors errors)
 
-         {:valid?      (and (empty? errors)
-                            (:valid? final-reads)
-                            (:valid? plot))
-          :errors      errors
-          :final-reads final-reads
-          :read-range  read-values
-          :bounds      (range->vec bounds)
-          :plot        plot})))))
+           true
+           (assoc :final-reads final-reads)
+
+           (not= [nil nil] (range->vec bounds))
+           (assoc :bounds (range->vec bounds))
+
+           (not (:valid? plot))
+           (assoc :plot plot)))))))
 
 (defn unique-random-numbers
   "Generate a unique series of random numbers from 0 to n-1 
