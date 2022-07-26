@@ -11,6 +11,8 @@
   {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, or final?)
   ```
    
+  Clients should augment each `op` with `{:node name}`.
+   
   To create a `workload` with a suitable general purpose `generator`/`final-generator`,
   a random mix of counter strategies, and a full `checker` for use in your `test`,
   create a `Client` and:
@@ -34,9 +36,9 @@
   (:import (com.google.common.collect Range
                                       TreeRangeSet)))
 
-(defn- vec->range
-  "Takes a [lower upper] *closed* bounds (nil = infinity) and constructs a Range.
-  The constructed Range will be an *open* range from
+(defn vec->range
+  "Takes a [lower upper] *closed* bounds (nil = infinity) and constructs a `Range`.
+  The constructed `Range` will be an *open* range from
   (lower - 1 .. upper + 1), which ensures that merges work correctly."
   (^Range [[lower upper]]
    (assert (if (and lower upper)
@@ -48,8 +50,8 @@
      (and (not lower) upper)       (Range/atMost upper)
      :else                         (Range/all))))
 
-(defn- range->vec
-  "Converts an open range into a closed integer [lower upper] pair."
+(defn range->vec
+  "Converts an open `Range` into a closed integer [lower upper] pair."
   [^Range r]
   (cond
     (and (.hasLowerBound r)
@@ -69,40 +71,28 @@
 
     :else [nil nil]))
 
-(defn- shift-range
-  "Creates a new Range from existing Range + delta."
-  ^Range [^Range r delta]
-  (Range/open (+ (.lowerEndpoint r) delta)
-              (+ (.upperEndpoint r) delta)))
-
-(defn- shift-ranges
-  "Creates a new sequence of Range's by shifting existing Range's by delta."
+(defn shift-ranges
+  "Creates a sequence of new `Range`s by shifting existing `Range`s by delta."
   [ranges delta]
-  (map #(shift-range % delta) ranges))
+  (->> ranges
+       (map #(Range/open (+ (.lowerEndpoint %) delta)
+                         (+ (.upperEndpoint %) delta)))))
 
-(defn- tree-range-set-adds
-  "Adds the given Range's to an existing TreeRangeSet"
+(defn tree+ranges
+  "Adds the given `Range`s to an existing `TreeRangeSet`."
   [ranges ^TreeRangeSet trs]
   (doseq [^Range r ranges]
     (.add trs r)))
 
-(defn- tree-range-set->vecs
-  "Turns a TreeRangeSet of open Range's into a 
-  vector of closed, inclusive, [lower upper] ranges."
+(defn tree->vecs
+  "Turns a `TreeRangeSet` of open `Range`s into a 
+  vector of closed, inclusive, [lower upper] `Range`s."
   [^TreeRangeSet s]
   (->> (map range->vec (.asRanges s))
        vec))
 
-(defn- txn->delta
-  "Given a transaction, returns `:value`/-`:value` for `:increment`/`:decrement`."
-  [txn]
-  (let [value  (:value txn)]
-    (if ((comp #{:increment} :f) txn)
-      value
-      (* -1 value))))
-
-(defn- shift-tree
-  "Shift an existing TreeRangeSet to reflect delta in each Range."
+(defn shift-tree
+  "Shift an existing `TreeRangeSet` to reflect delta in each `Range`."
   [^TreeRangeSet trs delta]
   ; ! Mutation ! materialize asRanges to avoid iterating during mutation!
   ;              clear tree as we only want shifted ranges
@@ -110,25 +100,25 @@
         _      (.clear trs)]
     (-> ranges
         (shift-ranges delta)
-        (tree-range-set-adds trs))))
+        (tree+ranges trs))))
 
-(defn- grow-tree
-  "Grow an existing TreeRangeSet by adding new Range's that reflect the delta in each Range."
+(defn grow-tree
+  "Grow an existing `TreeRangeSet` by adding new `Range`s that reflect the delta in each `Range`."
   [^TreeRangeSet trs delta]
   ; ! Mutation ! materialize asRanges to avoid iterating during mutation!
   (let [ranges (vec (.asRanges trs))]
     (-> ranges
         (shift-ranges delta)
-        (tree-range-set-adds trs))))
+        (tree+ranges trs))))
 
-(defn- clone-tree
+(defn clone-tree
   "Given a `TreeRangeSet` and ops, return a *new* tree with ops applied.
-   Ops are applied as maybe? writes."
+   Ops are applied as maybe writes, i.e. grow the tree."
   ^TreeRangeSet [^TreeRangeSet trs ops]
   (let [clone (TreeRangeSet/create trs)]
-    (doseq [{:keys [f] :as op} ops]
-      (when (contains? #{:increment :decrement} f) ; TODO should only be :increments now?
-        (grow-tree clone (txn->delta op))))
+    (doseq [{:keys [f value] :as _op} ops]
+      (when (= :increment f)
+        (grow-tree clone value)))
     clone))
 
 (defn- clean-ops
@@ -137,9 +127,9 @@
   (->> ops ; remove augmented processing keys for readability
        (map (fn [op] (dissoc op :counter-ranges :counter-offsets :checker-prev-read)))))
 
-(defn- history->counter-ranges
-  "Augment all :read :ok and :increment :ok/:info ops with:
-    :counter-ranges [counter, process]  ; ranges of all possible valid values during lifetime of op"
+(defn history+counter-ranges
+  "Augment all `:read :ok` and `:increment :ok/:info` ops with:
+    `:counter-ranges [counter, process]  ; ranges of all possible valid values during lifetime of op`"
   ([history]
    (let [; ! mutable data structures !
          ; acceptable counter range(s)
@@ -245,10 +235,10 @@
              (let [history' (conj! history' op)]
                (recur history open-ops history')))))))))
 
-(defn- history->counter-offsets
-  "Augment a history with :read :counter-offsets {node offset}
-   by interpreting :counter-ranges [counter process].
-   Offset is the delta of the :value from either the lower or upper bounds
+(defn history+counter-offsets
+  "Augment a history with `:read :counter-offsets {node offset}`
+   by interpreting `:counter-ranges [counter process]`.
+   Offset is the delta of the `:value` from either the lower or upper bounds
    of the acceptable counter range during the op."
   [history]
   (->> history
@@ -272,8 +262,8 @@
                   (assoc op :counter-offsets {node read-offset}))
                 op)))))
 
-(defn- history->previous-reads
-  "Given a history, returns a history with ok read ops augmented with :checker-prev-read.
+(defn history+previous-reads
+  "Given a history, returns a history with `:ok :read` ops augmented with `:checker-prev-read`.
    Reads are tracked per process."
   [history]
   (loop [history    history
@@ -303,7 +293,7 @@
     - must be final? read from all nodes
     - all reads must agree on counter ranges
     - all reads must be equal
-  May return suspicious op's, e.g. increment value = read offset from counter.  
+  May return suspicious `op`s, e.g. increment value = read offset from counter.  
   {:valid? true/false
    :final-reads [[node, value], ...]
    :counter [range, ...]
@@ -349,7 +339,7 @@
 
       true
       (assoc :final-reads (->> finals (map (fn [{:keys [node value]}] [node value])) sort)
-             :counter (tree-range-set->vecs counter))
+             :counter (tree->vecs counter))
 
       (seq suspicious)
       (assoc :suspicious suspicious))))
@@ -363,54 +353,49 @@
   Returns:
   ```clj
   {:valid?         true | false     ; any errors?
-   :errors         [op, ...]        ; op's with errors
+   :errors         [op, ...]        ; ops with errors
    :final-reads
      {:valid?      true | false     ; final reads valid?
       :final-reads [value, ...]     ; final read value's
       :counter     [[lower upper]]  ; closed Range(s) of acceptable counter value(s)
-      :suspicious  [op, ...]}       ; possible suspicious op's, e.g. its value is missing from read value
+      :suspicious  [op, ...]}       ; possible suspicious ops, e.g. its value is missing from read value
    :bounds         [lower upper]}   ; bounds, may be [nil nil] (-∞..+∞)
   ```
   
   The `checker` goes through the history `op` by `op` keeping track of:
   
-  - acceptable counter values
-  - each client's possible PoV
-  - what `op`'s definitely happened, maybe? happened 
-  - what has each client definitely seen, maybe? seen
+  - acceptable counter value(s)
+  - each clients' PoV of possible eventualities
+  - what `op`'s definitely happened, maybe happened 
+  - what has each client definitely seen, maybe seen
   - open `op`'s that may be seen during this `op`
   - and so on...
    
-  `:ok` `:increment`/`:decrement` (happened)
+  `:increment`/`:decrement`
 
-  - must be reflected in the counter, this client's PoV
-  - may be reflected in other client's PoV
-  - must be in bounds
+    - `:invoke` (regardless of ultimate `:ok`/`:info`)
+      - may be reflected in the counter (not relevant for this client as it's doing the `op`)
+      - may be reflected in other client's PoV
+    - `:ok` (happened)
+      - must be reflected in the counter, this client's PoV
+      - may be reflected in other client's PoV
+      - must be in bounds
+    - `:info` (maybe happened)
+      - may be reflected in the counter, this client's PoV
+      - may be reflected in other client's PoV
+    
+  `:read`
   
-  
-  `:info` `:increment`/`:decrement` (maybe? happened)
-
-  - may be reflected in the counter, this client's PoV
-  - may be reflected in other client's PoV
-  
-  `:invoke`'d `:increment`/`:decrement` (regardless of ultimate `:ok`/`:info`)
-
-  - may be reflected in the counter (not relevant for this client as it's doing the `op`)
-  - may be reflected in other client's PoV
-  
-  all `:reads`
-
-  - must be possible from this client's PoV
-  - must be in bounds
-
-  `:final?` `:reads`'s
-  
-  - must be acceptable counter value
-  - must be present and equal accross all nodes
-
-  `:monotonic?` `:reads`'s
-  
-  - must be `>=` previous read (absolute values)"
+    - `:invoke`
+      - may see any value the counter/client PoV has during time `op` is open
+    - `:ok`
+      - must be possible from this client's PoV
+      - must be in bounds
+    - `:final?`
+      - must be acceptable counter value
+      - must be present and equal across all nodes
+    - `monotonic?`
+      - must be `>=` previous read (absolute values)"
   ([] (checker {}))
   ([{bounds :bounds :as opts}]
    (reify checker/Checker
@@ -440,9 +425,9 @@
              ;  - :ok/:info ops with :counter-ranges [counter process]
              ;  - :read :ok with :counter-offsets {node offset}, :checker-prev-read
              history (->> history
-                          history->counter-ranges
-                          history->counter-offsets
-                          history->previous-reads
+                          history+counter-ranges
+                          history+counter-offsets
+                          history+previous-reads
                           vec)
 
              ; loop op by op
@@ -484,11 +469,11 @@
                        (recur history errors))
 
                      [:info :increment]
-                     ; maybe? op occured, so can't test out of bounds 
+                     ; maybe? op occurred, so can't test out of bounds 
                      (recur history errors)
 
                      [:ok :increment]
-                     ; op occured, counter and process were updated, so
+                     ; op occurred, counter and process were updated, so
                      ; are process and counter values still within bounds
                      (let [errors (cond-> errors
                                     (not (.intersects ctr-ranges bounds))
@@ -532,18 +517,18 @@
     (concat a-set (set/difference (set (take n (range)))
                                   a-set))))
 
-(defn rand-value-generator
+(defn rand-generator
   "Generate random `:increment`/`:decrement` with unique random value's.
    
-  Returns a [[jepsen.generator/mix]] of:
+  Returns a `jepsen.generator/mix` of:
    
   - `:f (random :increment/:decrement) :value [key (-value <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
-  Using unique random values with a range larger than the number of op's
-  can create a more unique/sparse possible counter value state space for the checker
-  to make slightly more meaningful assertions."
-  ([k] (rand-value-generator k 10000))
+  Use unique random values from a range larger than the number of `op`s
+  to create a more unique/sparse set of possible counter values.
+  Can allow the checker to make slightly more meaningful assertions."
+  ([k] (rand-generator k 10000))
   ([k v]
    (gen/mix [(->> (unique-random-numbers (->> v (* 2) (+ 1)))
                   (map #(- % v))
@@ -554,7 +539,7 @@
                       :f :read,
                       :value (independent/tuple k nil)})])))
 
-(defn grow-only-generator
+(defn grow-generator
   "Generator for a grow-only counter.
   
   Returns a `generator/mix` of
@@ -562,10 +547,10 @@
   - `:f (only :increment *or* :decrement) :value (v + 1 <= unique random <= v * 2)]`
   - `:f :read :value [key nil] :monotonic? true`
    
-  Using a unique random value starting at `>= total # ops + 1`
-  creates a more unique/sparse possible counter value state space for the checker
-  to make slightly more meaningful assertions."
-  ([k] (grow-only-generator k 10000))
+  Use unique random values starting at `>= total # ops + 1` to
+  create a more unique/sparse set of possible counter values.
+  Can allow the checker to make slightly more meaningful assertions."
+  ([k] (grow-generator k 10000))
   ([k v]
    (let [f (rand-nth [:increment :decrement])]
      (gen/mix [(->> (unique-random-numbers v)
@@ -578,19 +563,19 @@
                         :value (independent/tuple k nil)
                         :monotonic? true})]))))
 
-(defn swing-value-generator
+(defn swing-generator
   "Generator that swings between trying to increase the counter with increments,
-  then decreasing with decrements, then increasing ...
+  then decrease with decrements, then increase ...
 
   Returns a `jepsen.generator/mix` of
    
   - `:f (periods of :increment, then :decrement, then ...) :value [key (0 <= unique random <= value)]`
   - `:f :read :value [key nil]`
    
-  Using unique random increment/decrement values to
-  create a more unique/sparse possible counter value state space for the checker
-  to make slightly more meaningful assertions."
-  ([k] (swing-value-generator k 10000))
+  Use unique random increment/decrement values to
+  create a more unique/sparse set of possible counter values.
+  Can allow the checker to make slightly more meaningful assertions."
+  ([k] (swing-generator k 10000))
   ([k v]
    (gen/mix [(gen/cycle-times 10 (->> (unique-random-numbers (+ v 1))
                                       (map (fn [v] {:type :invoke,
@@ -608,8 +593,8 @@
   "Returns `{:generator, :final-generator}` where:
   
   - `:generator` is a `jepsen.generator/mix` of individual generators
-      - 1 generator / key, with  # keys = nodes
-      - each individual key generator:
+      - 1 generator per key, with  # keys = # nodes
+      - each individual per key generator:
           - uses a different strategy to generate operations
               - random, swing, grow-only
           - is active the entire time of the test
@@ -629,9 +614,9 @@
          modifiers] (reduce (fn [[gs ms] key]
                               (let [[k g m] (->> counter-strategy
                                                  rand-nth
-                                                 (get {:grow  [(str key "-grow")  (grow-only-generator   (str key "-grow"))  {:monotonic? true}]
-                                                       :swing [(str key "-swing") (swing-value-generator (str key "-swing")) {}]
-                                                       :rand  [(str key "-rand")  (rand-value-generator  (str key "-rand"))  {}]}))]
+                                                 (get {:grow  [(str key "-grow")  (grow-generator  (str key "-grow"))  {:monotonic? true}]
+                                                       :swing [(str key "-swing") (swing-generator (str key "-swing")) {}]
+                                                       :rand  [(str key "-rand")  (rand-generator  (str key "-rand"))  {}]}))]
                                 [(assoc gs k g)
                                  (assoc ms k m)]))
                             [{} {}]
@@ -674,7 +659,7 @@
   given options from the CLI test constructor.
    
   Generators and checker are `independent`, i.e. use key's,
-  so must be paired with a Client that can handle `:value [key value]` `op`'s.
+  so must be paired with a Client that can handle `:value [key value]` `op`s.
    
   See [[mix-generator]] and [[checker]]."
   [opts]
