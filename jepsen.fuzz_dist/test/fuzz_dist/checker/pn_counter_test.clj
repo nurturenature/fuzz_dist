@@ -79,41 +79,6 @@
                      {:type :ok,   :f :read, :final? true, :value 1}
                      {:type :ok,   :f :read, :final? true, :value 2}]))))
 
-    (testing "consistent"
-      (is (= {:valid?      true
-              :errors      []
-              :final-reads [2]
-              :acceptable  [[2 3]]
-              :read-range  [[0 2]]
-              :bounds      "(-∞..+∞)"
-              :possible    [[0 3]]}
-             (check [{:type :ok,   :f :increment, :value 1}
-                     {:type :ok,   :f :read, :value 0}
-                     {:type :ok,   :f :read, :value 1, :consistent? true}
-                     {:type :info, :f :increment, :value 1}
-                     {:type :ok,   :f :read, :value 1}
-                     {:type :ok,   :f :read, :value 2, :consistent? true}
-                     {:type :ok,   :f :increment, :value 1}
-                     {:type :ok,   :f :read, :value 2, :final? true}]))))
-
-    (testing "possible-not-consistent"
-      (is (= {:valid?      false
-              :errors      [{:type :ok, :f :read, :value 1, :consistent? true :checker-error "value not acceptable: [[2 3]]"}]
-              :final-reads [2]
-              :acceptable  [[2 3]]
-              :read-range  [[0 2]]
-              :bounds      "(-∞..+∞)"
-              :possible    [[0 3]]}
-             (check [{:type :ok,   :f :increment,  :value 1}
-                     {:type :ok,   :f :read, :value 0}
-                     {:type :ok,   :f :read, :value 1, :consistent? true}
-                     {:type :info, :f :increment, :value 1}
-                     {:type :ok,   :f :read, :value 1}
-                     {:type :ok,   :f :read, :value 2, :consistent? true}
-                     {:type :ok,   :f :increment, :value 1}
-                     {:type :ok,   :f :read, :value 1, :consistent? true}
-                     {:type :ok,   :f :read, :value 2, :final? true}]))))
-
     (testing "increment-decrement"
       (is (= {:valid?      true
               :errors      []
@@ -142,7 +107,6 @@
                      {:process 1, :type :ok,     :f :read,      :value 1}
                      {:process 1, :type :invoke, :f :increment, :value 1}
                      {:process 2, :type :ok,     :f :read,      :value 2}
-                     {:process 2, :type :ok,     :f :read,      :value 2 :consistent? true}
                      {:process 1, :type :ok,     :f :increment, :value 1}
                      {:process 1, :type :ok,     :f :read,      :value 2, :final? true}
                      {:process 2, :type :ok,     :f :read,      :value 2, :final? true}]))))

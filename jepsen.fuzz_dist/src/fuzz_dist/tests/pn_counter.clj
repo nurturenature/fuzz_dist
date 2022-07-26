@@ -7,9 +7,8 @@
   {:type :invoke, :f :increment, :value [key integer]}
   {:type :invoke, :f :decrement, :value [key integer]}
   {:type :invoke, :f :read       :value [key nil]}                    ; eventually-consistent
-  {:type :invoke, :f :read,      :value [key nil], :consistent? true} ; consistent
   {:type :invoke, :f :read,      :value [key nil], :final? true}      ; final (assumed consistent)
-  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, consistent?, or final?)
+  {:type :invoke, :f :read,      :value [key nil], :monotonic? true}  ; grow-only (can be applied to eventually, or final?)
   ```
    
   To create a `workload` with a suitable general purpose `generator`/`final-generator`,
@@ -401,10 +400,10 @@
   - must be possible from this client's PoV
   - must be in bounds
 
-  `:consistent?`/`:final?` `:reads`'s
+  `:final?` `:reads`'s
   
   - must be acceptable counter value
-  - `:final?` reads must be present and equal accross all nodes
+  - must be present and equal accross all nodes
 
   `:monotonic?` `:reads`'s
   
@@ -454,21 +453,21 @@
                       clean-ops)
 
                  :else ; op by op...
-                 (let [{:keys [type f value consistent? final? monotonic? counter-ranges checker-prev-read] :as op} (first history)
+                 (let [{:keys [type f value final? monotonic? counter-ranges checker-prev-read] :as op} (first history)
                        history (next  history)
                        [ctr-ranges p-ranges] counter-ranges]
 
                    (case [type f]
                      [:ok :read]
                      ; read value possible for this process during time op was open?
-                     ; :consistent?/:final? must also be in counter range
+                     ; :final? must also be in counter range
                      ; :monotonic? must absolutely grow
                      ; always in bounds
                      (let [errors (cond-> errors
                                     (not (.contains p-ranges value))
                                     (conj (assoc op :checker-error :value-not-possible))
 
-                                    (and (or consistent? final?)
+                                    (and final?
                                          (not (.contains ctr-ranges value)))
                                     (conj (assoc op :checker-error :value-invalid-counter))
 
