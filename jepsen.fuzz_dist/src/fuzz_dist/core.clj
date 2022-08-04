@@ -21,20 +21,20 @@
 
 (def nemeses
   "The types of faults our nemesis can produce"
-  #{:partition :pause :kill})
+  #{:partition :pause :kill :packet})
 
 (def special-nemeses
   "A map of special nemesis names to collections of faults"
   {:none      []
-   :standard  [:partition]
+   :standard  [:partition :packet]
    :process   [:pause :kill]
-   :all       [:partition :pause :kill]})
+   :all       [:partition :packet :pause :kill]})
 
 (def test-all-nemeses
   "A collection of partial options maps for various nemeses we want to run as a
   part of test-all."
   [{:nemesis nil}
-   {:nemesis #{:partition}}
+   {:nemesis #{:partition :packet}}
    {:nemesis #{:pause}}
    {:nemesis #{:kill} :antidote-sync-log? true}])
 
@@ -100,6 +100,18 @@
                         :nodes     (:nodes opts)
                         :faults    (:nemesis opts)
                         :partition {:targets (:partition-targets opts)}
+                        :packet    {:targets (:db-targets opts)
+                                    :behaviors [; typical day
+                                                {:delay {},
+                                                 :loss  {}}
+                                                ; ummm, about that firmware update...
+                                                {:corrupt {:percent :33%}}
+                                                ; are squirrels partying in the junction box?!?
+                                                {:delay {},
+                                                 :loss  {},
+                                                 :corrupt   {:percent :15%},
+                                                 :duplicate {:percent :25% :correlation :80%}
+                                                 :reorder   {:percent :30% :correlation :80%}}]}
                         :pause     {:targets (:db-targets opts)}
                         :kill      {:targets (:db-targets opts)}
                         :interval  (:nemesis-interval opts)})]
