@@ -30,6 +30,7 @@
              [checker :as checker]
              [generator :as gen]
              [independent :as independent]]
+            [jepsen.checker.timeline :as timeline]
             [knossos
              [history :as history]
              [op :as op]])
@@ -668,4 +669,7 @@
    {:checker (fn pn-checker ; support passing opts in test map, e.g. perf map for nemeses
                ([] (pn-checker {}))
                ([opts']
-                (independent/checker (checker (merge opts opts')))))}))
+                (independent/checker
+                 (checker/compose
+                  {:pn-counter (checker (merge opts opts'))
+                   :timeline   (timeline/html)}))))}))
