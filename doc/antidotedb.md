@@ -74,6 +74,7 @@ E.g. when calculating all of the possible eventually states to evaluate a read, 
 
 - none
 - partition
+- packet
 - kill
 - pause
 - targets: [:one, :all, :majority, :minority, :minority_third, :majorities_ring :primaries]
@@ -101,12 +102,13 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
 ## Anomalies
 <table>
   <tr>
-    <th colspan=5 style="text-align:center;">Anomalies Observed/Reproducible</th>
+    <th colspan=6 style="text-align:center;">Anomalies Observed/Reproducible</th>
   </tr>
   <tr>
     <td></td>
     <th>no faults</th>
     <th>partition</th>
+    <th>packet</th>
     <th>pause</th>
     <th>kill (w/sync_log)</th>
   </tr>
@@ -115,10 +117,12 @@ Uses Jepsen's [set-full](https://jepsen-io.github.io/jepsen/jepsen.checker.html#
     <td>none</td>
     <td>none</td>
     <td>none</td>
+    <td>none</td>
     <td>yes</td>
   </tr>
  <tr>
     <th>Inter DC</th>
+    <td>yes</td>
     <td>yes</td>
     <td>yes</td>
     <td>yes</td>
@@ -183,6 +187,28 @@ pc-counter:
   - invalid final read values
   - impossible read values
   - non-monotonic reads for grow-only 
+
+----
+
+### Packets
+
+#### Intra DC
+- no anomalies observed
+- increased client write timeouts post packet disruption, in healed state
+
+#### Inter DC
+
+g-set:
+- all op's return `:ok`
+- but a majority of tests fail most of the time
+  - not all writes are replicated
+
+
+pc-counter:
+- all op's return `:ok`
+- but most tests fail most of the time
+  - invalid final read values
+  - impossible read values
 
 ----
 
