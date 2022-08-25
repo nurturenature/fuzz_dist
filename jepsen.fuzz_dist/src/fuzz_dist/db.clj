@@ -130,7 +130,8 @@
       (c/su
        (cu/stop-daemon! node-fuzz-dist-pid-file)
        (cu/stop-daemon! node-antidote-pid-file)
-       (cu/grepkill! "beam.smp")))
+       (cu/grepkill! "beam.smp")
+       (cu/grepkill! "epmd")))
 
     db/Pause
     (pause! [_this _test _node]
