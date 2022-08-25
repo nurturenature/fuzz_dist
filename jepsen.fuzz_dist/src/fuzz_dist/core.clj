@@ -9,6 +9,7 @@
     [cli :as cli]
     [checker :as checker]
     [generator :as gen]
+    [net :as net]
     [tests :as tests]]
    [jepsen.nemesis.combined :as nc]
    [jepsen.checker.timeline :as timeline]
@@ -101,17 +102,21 @@
                         :faults    (:nemesis opts)
                         :partition {:targets (:partition-targets opts)}
                         :packet    {:targets (:db-targets opts)
-                                    :behaviors [; typical day
-                                                {:delay {},
-                                                 :loss  {}}
-                                                ; ummm, about that firmware update...
-                                                {:corrupt {:percent :33%}}
-                                                ; are squirrels partying in the junction box?!?
-                                                {:delay {},
-                                                 :loss  {},
-                                                 :corrupt   {:percent :15%},
-                                                 :duplicate {:percent :25% :correlation :80%}
-                                                 :reorder   {:percent :30% :correlation :80%}}]}
+                                    :behaviors (for [_ (range 10)]
+                                                 (->> net/all-packet-behaviors
+                                                      (random-sample (/ (+ 1 (rand-int 3))
+                                                                        (count net/all-packet-behaviors)))
+                                                      (into {})))
+                                    ;          [; typical day
+                                    ;           {:delay {}}
+                                    ;           ; ummm, about that firmware update...
+                                    ;           {:corrupt {:percent :33%}}
+                                    ;           ; failing adapter?!?
+                                    ;           {:delay {},
+                                    ;            :corrupt   {:percent :15%},
+                                    ;            :duplicate {:percent :25% :correlation :75%}
+                                    ;            :reorder   {:percent :30% :correlation :80%}}]
+                                    }
                         :pause     {:targets (:db-targets opts)}
                         :kill      {:targets (:db-targets opts)}
                         :interval  (:nemesis-interval opts)})]
