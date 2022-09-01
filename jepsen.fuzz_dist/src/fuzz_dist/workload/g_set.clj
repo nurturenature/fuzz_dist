@@ -24,20 +24,21 @@
   (setup! [_this _test])
 
   (invoke! [_this _test op]
-    (case (:f op)
-      :add  (let [resp (fd-client/ws-invoke conn :g_set :add op)]
-              (case (:type resp)
-                "ok"   (assoc op :type :ok)
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
-                (assoc op :type :info, :error (str resp))))
-      :read (let [resp (fd-client/ws-invoke conn :g_set :read op)]
-              (case (:type resp)
+    (let [op (assoc op :node (:node conn))]
+      (case (:f op)
+        :add  (let [resp (fd-client/ws-invoke conn :g_set :add op)]
+                (case (:type resp)
+                  "ok"   (assoc op :type :ok)
+                  "fail" (assoc op :type :fail, :error (:error resp))
+                  "info" (assoc op :type :info, :error (:error resp))
+                  (assoc op :type :info, :error (str resp))))
+        :read (let [resp (fd-client/ws-invoke conn :g_set :read op)]
+                (case (:type resp)
                 ;; sort returned set for human readability, json unorders
-                "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
-                "fail" (assoc op :type :fail, :error (:error resp))
-                "info" (assoc op :type :info, :error (:error resp))
-                (assoc op :type :info, :error (str resp))))))
+                  "ok"   (assoc op :type :ok,   :value (sort (:value resp)))
+                  "fail" (assoc op :type :fail, :error (:error resp))
+                  "info" (assoc op :type :info, :error (:error resp))
+                  (assoc op :type :info, :error (str resp)))))))
 
   (teardown! [_this _test])
 
