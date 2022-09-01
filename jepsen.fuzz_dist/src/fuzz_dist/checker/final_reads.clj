@@ -8,23 +8,29 @@
 (defn checker
   []
   (reify checker/Checker
-    (check [_this _test history _opts]
+    (check [_this {:keys [nodes] :as _test} history _opts]
       (let [final-reads (->> history
                              (filter (comp #{:read} :f))
                              (filter :final?)
-                             (filter op/ok?))
+                             (filter op/ok?)
+                             (reduce (fn [acc {:keys [node value] :as _read}]
+                                       (assoc acc node (->> value (set))))
+                                     {}))
             all-add-values (->> history
                                 (filter (comp #{:add} :f))
                                 (filter op/ok?)
                                 (map :value)
                                 (set))
-            missing-values (->> final-reads
-                                (map :value)
-                                (reduce
-                                 #(->> (difference all-add-values (set %2))
-                                       (union %1))
-                                 #{}))]
-        {:valid?        (empty? missing-values)
-         :missing-count (count missing-values)
-         :missing       (->> (seq missing-values)
-                             (sort))}))))
+            missing-values (->> nodes
+                                (reduce (fn [acc node]
+                                          (if-let [final-read (get final-reads node)]
+                                            (let [missing (difference all-add-values final-read)]
+                                              (if (empty? missing)
+                                                acc
+                                                (assoc acc node (sort missing))))
+                                            (assoc acc node :missing-final-read)))
+                                        {}))]
+        (if (empty? missing-values)
+          {:valid? true}
+          {:valid? false
+           :missing missing-values})))))
