@@ -1,6 +1,6 @@
 (ns fuzz-dist.checker.final-reads
-  "Checks a set-full history for :final? true reads and
-  analyzes their consistency against all :ok :add's."
+  "Checks a set-full history for `:final? true` reads and
+  analyzes their consistency against all `:ok :add`'s."
   (:require [clojure.set :refer [difference union]]
             [jepsen.checker :as checker]
             [knossos.op :as op]))
@@ -30,7 +30,11 @@
                                                 (assoc acc node (sort missing))))
                                             (assoc acc node :missing-final-read)))
                                         {}))]
-        (if (empty? missing-values)
-          {:valid? true}
-          {:valid? false
-           :missing missing-values})))))
+        (cond-> {:valid? true}
+          (seq missing-values)
+          (assoc :valid? false
+                 :missing missing-values)
+
+          (not= (vals final-reads))
+          (assoc :valid? false
+                 :error  :unequal-final-reads))))))
