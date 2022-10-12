@@ -29,15 +29,19 @@
   {:none      []
    :standard  [:partition :packet]
    :process   [:pause :kill]
-   :all       [:partition :packet :pause :kill]})
+   :all       [:partition :packet :pause :kill :file-corruption]})
 
 (def test-all-nemeses
   "A collection of partial options maps for various nemeses we want to run as a
   part of test-all."
   [{:nemesis nil}
-   {:nemesis #{:partition :packet}}
+   {:nemesis #{:partition}}
+   {:nemesis #{:packet}}
    {:nemesis #{:pause}}
-   {:nemesis #{:kill} :antidote-sync-log? true}])
+   {:nemesis #{:partition :packet :pause}}
+   {:nemesis #{:kill} :antidote-sync-log? true}
+   {:nemesis #{:file-corruption}}
+   {:nemesis #{:file-corruption :kill} :antidote-sync-log? true}])
 
 (def partition-targets
   "Valid targets for partition nemesis operations."
@@ -118,7 +122,22 @@
                                     ;            :reorder   {:percent :30% :correlation :80%}}]
                                     }
                         :pause     {:targets (:db-targets opts)}
-                        :kill      {:targets (:db-targets opts)}
+                        :kill      {:targets [;; (:db-targets opts)
+                                              ;; ["n1"]
+                                              :minority]}
+                        :file-corruption {:targets     [:minority
+                                                        ;; ["n1"]
+                                                        ;; ["n1" "n2"]
+                                                        ;; ["n1" "n2" "n3"]
+                                                        ]
+                                          :corruptions [{:type :bitflip :file db/node-antidote-data-dir
+                                                         :probability {:distribution :one-of :values [1e-2 1e-3 1e-4]}}
+                                                        {:type :bitflip :file db/node-antidote-riak-dir
+                                                         :probability {:distribution :one-of :values [1e-2 1e-3 1e-4]}}
+                                                        {:type :truncate :file db/node-antidote-data-dir
+                                                         :drop {:distribution :geometric :p 1e-3}}
+                                                        {:type :truncate :file db/node-antidote-riak-dir
+                                                         :drop {:distribution :geometric :p 1e-3}}]}
                         :interval  (:nemesis-interval opts)})]
 
     (merge tests/noop-test
@@ -140,7 +159,9 @@
                           ; TODO confirm: do error messages in Antidote count as an error?
                           ; :logs-antidote  (checker/log-file-pattern #"error\:"   db/antidote-log-file)
                           ; disterl :nodeup/down msgs are not considered errors
-                          :logs-fuzz-dist (checker/log-file-pattern #"\[error\]\ (?!\*\* Node :fuzz_dist\@.+\ not\ responding\ \*\*$)" db/fuzz-dist-log-file)})
+                          ; too many false positives
+                          ; :logs-fuzz-dist (checker/log-file-pattern #"\[error\]\ (?!\*\* Node :fuzz_dist\@.+\ not\ responding\ \*\*$)" db/fuzz-dist-log-file)
+                          })
             :logging    {:overrides
                          ;; TODO: how to turn off SLF4J logging?
                          {"io.netty.util.internal.InternalThreadLocalMap" :off

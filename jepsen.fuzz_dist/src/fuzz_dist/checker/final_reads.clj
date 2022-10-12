@@ -1,6 +1,10 @@
 (ns fuzz-dist.checker.final-reads
-  "Checks a set-full history for `:final? true` reads and
-  analyzes their consistency against all `:ok :add`'s."
+  "Checks `:final? true` reads in a [[jepsen.checker/set-full]] history.
+  
+     - must exist for each node
+     - must contain all `:ok` add's
+     - must all be equal
+   "
   (:require [clojure.set :refer [difference union]]
             [jepsen.checker :as checker]
             [knossos.op :as op]))
