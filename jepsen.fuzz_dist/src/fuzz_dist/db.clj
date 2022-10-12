@@ -11,7 +11,12 @@
             [slingshot.slingshot :refer [throw+]]))
 
 (def node-antidote          "/root/antidote")
+; (def node-antidote          "/root/vaxine")
+(def antidote-binary        "bin/antidote")
+; (def antidote-binary        "bin/vaxine")
 (def antidote-log-file      "antidote.daemon.log")
+(def node-antidote-data-dir (str node-antidote "/data_antidote"))
+(def node-antidote-riak-dir (str node-antidote "/data_riak_core"))
 (def node-antidote-log-file (str node-antidote "/" antidote-log-file))
 (def node-antidote-pid-file (str node-antidote "/" "antidote.daemon.pid"))
 (def node-fuzz-dist          "/root/fuzz_dist")
@@ -50,7 +55,7 @@
                      (c/exec
                       (c/env {:NODE_NAME (n-to-fqdn node "antidote")
                               :COOKIE "antidote"})
-                      "bin/antidote"
+                      antidote-binary
                       :eval
                       erlang-eval)))]
           (info "erlang-eval: " erlang-eval " -> " resp))))
@@ -59,7 +64,7 @@
       (db/kill! this test node)
 
       (c/su
-       (c/exec :rm :-rf "/root/antidote")
+       (c/exec :rm :-rf node-antidote)
        (c/exec :rm :-rf "/root/fuzz_dist")
        (c/exec :rm :-f  "/root/.erlang.cookie")))
 
@@ -107,7 +112,7 @@
                    :COOKIE "antidote"}
              :logfile node-antidote-log-file
              :pidfile node-antidote-pid-file}
-            "bin/antidote"
+            antidote-binary
             :foreground
             :-kernel   :logger_level (:kernel-logger-level test)
             :-antidote :sync_log     (:antidote-sync-log?  test)))
