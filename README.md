@@ -1,5 +1,11 @@
 # fuzz_dist
 
+## This Repository is Now a Public Archive
+
+### Its Perspectives and Methodologies Have Proven Fruitful in Other Projects
+
+----
+
 A framework and customization of Jepsen for BEAM applications.
 
 Generative property testing of...
